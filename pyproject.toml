@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "crewflow"
+version = "0.2.0"
+description = "Multi-Agent collabration research system built with LangGraph"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = [
+    "langchain>=0.3.0",
+    "langchain-core>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "langgraph>=0.3.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    "httpx>=0.27.0",
+    "trafilatura>=2.0.0",
+    "tavily-python>=0.5.0",
+    "sqlalchemy>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.25",
+    "pytest-cov>=6.0",
+    "ruff>=0.9.0",
+    "mypy>=1.15",
+    "pre-commit>=4.0",
+]
+server = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "sse-starlette>=2.0.0",
+    "asyncpg>=0.30.0",
+]
+web = [
+    "gradio>=5.0.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "RUF100"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-width = 4
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+exclude = ["tests/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+markers = [
+    "integration: marks tests that call external APIs",
+    "slow: marks slow tests",
+    "graph: marks LangGraph integration tests",
+]
+addopts = "-p no:warnings"
+filterwarnings = ["ignore::DeprecationWarning"]
