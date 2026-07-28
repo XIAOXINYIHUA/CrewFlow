@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import NamedTuple
+from typing import NamedTuple, TypedDict
 
 from src.models import Claim, Source
 
@@ -32,10 +32,29 @@ class CitationCheckResult(NamedTuple):
     note: str
 
 
+class UncitedAssertion(TypedDict):
+    """A report line containing an assertion that needs a citation."""
+
+    line: int
+    text: str
+    patterns: list[str]
+
+
+class ClaimConflict(TypedDict):
+    """A pair of claims with inconsistent statuses for one question."""
+
+    claim_a: str
+    claim_b: str
+    text_a: str
+    text_b: str
+    question_id: str
+    note: str
+
+
 class CitationCoverageReport:
     """引用覆盖检查报告"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.valid_citations: list[CitationCheckResult] = []
         self.invalid_citations: list[CitationCheckResult] = []
         self.uncited_claims: list[str] = []
@@ -141,7 +160,7 @@ KEY_ASSERTION_PATTERNS = [
 ]
 
 
-def find_uncited_assertions(report: str) -> list[dict]:
+def find_uncited_assertions(report: str) -> list[UncitedAssertion]:
     """检测报告中缺少引用的关键断言
 
     使用模式匹配找出可能缺少引用的位置。
@@ -149,7 +168,7 @@ def find_uncited_assertions(report: str) -> list[dict]:
     Returns:
         位置列表, 每项包含 line 和 pattern
     """
-    results: list[dict] = []
+    results: list[UncitedAssertion] = []
     lines = report.split("\n")
 
     for line_no, line in enumerate(lines, 1):
@@ -167,7 +186,7 @@ def find_uncited_assertions(report: str) -> list[dict]:
             continue
 
         # 检查是否匹配关键断言模式
-        matched_patterns = []
+        matched_patterns: list[str] = []
         for pattern in KEY_ASSERTION_PATTERNS:
             if pattern.search(stripped):
                 matched_patterns.append(pattern.pattern)
@@ -189,7 +208,7 @@ def find_uncited_assertions(report: str) -> list[dict]:
 # ═══════════════════════════════════════════
 
 
-def detect_conflicting_claims(claims: list[Claim]) -> list[dict]:
+def detect_conflicting_claims(claims: list[Claim]) -> list[ClaimConflict]:
     """检测相互冲突的 Claim
 
     基于文本相似度和数值差异做基础检测。
@@ -200,7 +219,7 @@ def detect_conflicting_claims(claims: list[Claim]) -> list[dict]:
     Returns:
         冲突对列表, 每项包含两个 claim_id 和冲突说明
     """
-    conflicts: list[dict] = []
+    conflicts: list[ClaimConflict] = []
 
     # 检测明确标记为 conflicting 的 Claim
     for claim in claims:

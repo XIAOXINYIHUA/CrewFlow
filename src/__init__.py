@@ -1,27 +1,5 @@
-"""CrewFlow - Multi-Agent 协作研究系统
+"""CrewFlow - trustworthy multi-agent research workflows."""
 
-可信、可恢复、可审计、可人工审批的研究系统。
-"""
+__version__ = "0.3.0"
 
-from . import (
-    config,
-    edges,
-    graph,
-    models,
-    nodes,
-    prompts,
-    state,
-    tools,
-)
-
-__version__ = "0.2.0"
-__all__ = [
-    "config",
-    "models",
-    "state",
-    "nodes",
-    "edges",
-    "graph",
-    "tools",
-    "prompts",
-]
+__all__ = ["__version__"]

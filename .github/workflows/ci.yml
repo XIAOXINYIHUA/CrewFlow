@@ -29,13 +29,13 @@ jobs:
         run: uv sync --extra dev
 
       - name: Ruff check
-        run: uv run ruff check src/ tests/ main.py web.py
+        run: uv run ruff check src/ tests/ migrations/ main.py web.py
 
       - name: Ruff format check
-        run: uv run ruff format --check src/ tests/ main.py web.py
+        run: uv run ruff format --check src/ tests/ migrations/ main.py web.py
 
       - name: MyPy type check
-        run: uv run mypy src/ --ignore-missing-imports || true  # 暂时不阻止
+        run: uv run mypy src/ --ignore-missing-imports
 
   test:
     name: Tests

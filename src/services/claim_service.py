@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from src.config import settings
-from src.models import Claim, Evidence, Source
+from src.models import Claim, ClaimStatus, Evidence, Source
 
 # ═══════════════════════════════════════════
 # 结构化输出模型 (用于 LLM 提取)
@@ -27,7 +29,7 @@ class ExtractedClaim(BaseModel):
 
     text: str = Field(..., description="结论陈述, 只能基于来源中的事实")
     question_id: str = Field("", description="关联的研究子问题 ID")
-    status: str = Field("supported", description="supported / conflicting / unsupported")
+    status: ClaimStatus = Field("supported", description="supported / conflicting / unsupported")
     confidence: float = Field(0.7, ge=0.0, le=1.0, description="置信度")
     evidence: list[ExtractedEvidence] = Field(default_factory=list, description="支持证据")
 
@@ -142,7 +144,7 @@ def extract_claims_from_source(
     ]
 
     try:
-        result: SourceExtraction = structured.invoke(msgs)
+        result = cast(SourceExtraction, structured.invoke(msgs))
 
         if not result.claims:
             return []
@@ -164,7 +166,7 @@ def extract_claims_from_source(
                 question_id=ec.question_id,
                 evidence=evidence,
                 confidence=ec.confidence,
-                status=ec.status,  # type: ignore
+                status=ec.status,
             )
             claims.append(claim)
 

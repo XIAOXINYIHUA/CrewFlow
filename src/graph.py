@@ -12,11 +12,18 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
+from collections.abc import Callable, Coroutine
 from functools import wraps
+from typing import Any, cast
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
+from src.config import settings
 from src.edges import after_human_review, should_revise_or_end
 from src.nodes import (
     analyst_node,
@@ -37,29 +44,68 @@ from src.nodes_extra import (
 )
 from src.state import CrewState
 
+NodeUpdate = dict[str, Any]
+CompiledCrewGraph = CompiledStateGraph[CrewState, None, CrewState, CrewState]
+_CHECKPOINT_MODEL_ALLOWLIST: tuple[tuple[str, str], ...] = (
+    ("src.models", "ResearchRequirements"),
+    ("src.models", "ResearchQuestion"),
+    ("src.models", "SearchQuery"),
+    ("src.models", "ResearchPlan"),
+    ("src.models", "SearchResult"),
+    ("src.models", "Source"),
+    ("src.models", "Evidence"),
+    ("src.models", "Claim"),
+    ("src.models", "ReviewIssue"),
+    ("src.models", "ReviewResult"),
+    ("src.models", "ReportVersion"),
+    ("src.models", "HumanDecision"),
+    ("src.models", "NodeExecutionRecord"),
+)
 
-def _sync(f):
+
+def _sync(
+    f: Callable[[CrewState], Coroutine[Any, Any, NodeUpdate]],
+) -> Callable[[CrewState], NodeUpdate]:
     @wraps(f)
-    def wrapper(state: CrewState):
+    def wrapper(state: CrewState) -> NodeUpdate:
         return asyncio.run(f(state))
 
     return wrapper
 
 
-_graph_instance = None
+_graph_instance: CompiledCrewGraph | None = None
+_checkpoint_connection: sqlite3.Connection | None = None
 
 
-def build_graph() -> StateGraph:
+def _build_checkpointer() -> BaseCheckpointSaver[Any]:
+    """Create the durable SQLite saver used by all graph executions."""
+    global _checkpoint_connection
+
+    settings.ensure_dirs()
+    _checkpoint_connection = sqlite3.connect(
+        settings.CHECKPOINT_DB,
+        check_same_thread=False,
+        timeout=30.0,
+    )
+    _checkpoint_connection.execute("PRAGMA journal_mode=WAL")
+    serializer = JsonPlusSerializer(allowed_msgpack_modules=_CHECKPOINT_MODEL_ALLOWLIST)
+    checkpointer = SqliteSaver(_checkpoint_connection, serde=serializer)
+    checkpointer.setup()
+    return cast(BaseCheckpointSaver[Any], checkpointer)
+
+
+def build_graph() -> CompiledCrewGraph:
     global _graph_instance
     if _graph_instance is not None:
         return _graph_instance
 
-    graph = StateGraph(CrewState)
+    graph: StateGraph[CrewState, None, CrewState, CrewState] = StateGraph(CrewState)
 
     # 节点
     graph.add_node("validate_input", validate_input_node)
     graph.add_node("planner", planner_node)
-    graph.add_node("researcher", _sync(researcher_node))
+    # LangGraph's add_node overload currently cannot infer a wrapped coroutine node.
+    graph.add_node("researcher", cast(Any, _sync(researcher_node)))
     graph.add_node("source_processor", source_processor_node)
     graph.add_node("claim_builder", claim_builder_node)
     graph.add_node("coverage_checker", coverage_checker_node)
@@ -100,11 +146,13 @@ def build_graph() -> StateGraph:
 
     graph.add_edge("publisher", END)
 
-    memory = MemorySaver()
-    _graph_instance = graph.compile(checkpointer=memory, interrupt_before=[])
+    _graph_instance = graph.compile(checkpointer=_build_checkpointer(), interrupt_before=[])
     return _graph_instance
 
 
-def reset_graph():
-    global _graph_instance
+def reset_graph() -> None:
+    global _checkpoint_connection, _graph_instance
     _graph_instance = None
+    if _checkpoint_connection is not None:
+        _checkpoint_connection.close()
+        _checkpoint_connection = None

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, TypeVar, cast
 
+from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
 from langgraph.managed import IsLastStep
 from typing_extensions import TypedDict
@@ -24,15 +25,17 @@ from .models import (
     Source,
 )
 
+T = TypeVar("T")
 
-def reduce_list(existing: list, update: list) -> list:
+
+def reduce_list(existing: list[T] | None, update: list[T] | None) -> list[T]:
     """Reducer for list fields — replace on update, keep on no-op."""
     if update is None:
         return existing or []
     return update
 
 
-def reduce_optional(existing, update):
+def reduce_optional(existing: T | None, update: T | None) -> T | None:
     """Reducer for optional fields — last writer wins."""
     return update if update is not None else existing
 
@@ -57,7 +60,7 @@ class CrewState(TypedDict):
 
     # ── 研究计划 ──
     research_plan: ResearchPlan | None
-    outline: dict | None  # ReportOutline 的事例化
+    outline: dict[str, object] | None  # ReportOutline 的事例化
     coverage_gaps: Annotated[list[str], reduce_list]
 
     # ── 搜索结果和来源 ──
@@ -90,7 +93,7 @@ class CrewState(TypedDict):
     errors: Annotated[list[str], reduce_list]
 
     # ── 消息 (LangGraph 兼容) ──
-    messages: Annotated[list, add_messages]
+    messages: Annotated[list[AnyMessage], add_messages]
     is_last_step: IsLastStep
 
 
@@ -101,10 +104,10 @@ def create_initial_state(
     topic: str,
     run_id: str,
     thread_id: str,
-    **overrides,
-) -> dict:
+    **overrides: object,
+) -> CrewState:
     """创建符合 CrewState 的初始状态字典"""
-    base: dict = {
+    base: dict[str, object] = {
         "run_id": run_id,
         "thread_id": thread_id,
         "status": "queued",
@@ -137,4 +140,4 @@ def create_initial_state(
         "is_last_step": False,
     }
     base.update(overrides)
-    return base
+    return cast(CrewState, base)

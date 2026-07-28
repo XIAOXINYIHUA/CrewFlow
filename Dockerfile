@@ -19,7 +19,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 COPY . .
 
-RUN mkdir -p output data/artifacts data/migrations
+RUN mkdir -p output data/artifacts data/checkpoints data/migrations
 
 EXPOSE 8000 7860
 

@@ -5,9 +5,19 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import datetime
+from typing import TypedDict
 from urllib.parse import urlparse
 
 from src.models import SearchResult, Source, SourceType
+
+
+class WebpageFetchResult(TypedDict):
+    """Normalized result of fetching and extracting a web page."""
+
+    content: str
+    title: str
+    error: str | None
+
 
 # ═══════════════════════════════════════════
 # URL 规范化
@@ -181,7 +191,7 @@ def is_safe_url(url: str) -> tuple[bool, str]:
 # ═══════════════════════════════════════════
 
 
-def fetch_webpage(url: str, timeout: int = 15) -> dict:
+def fetch_webpage(url: str, timeout: int = 15) -> WebpageFetchResult:
     """抓取网页正文内容
 
     使用 httpx 获取 + trafilatura 提取正文。

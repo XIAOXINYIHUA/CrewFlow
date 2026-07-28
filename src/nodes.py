@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -33,6 +34,7 @@ from src.prompts import (
     REVIEWER_PROMPT,
     WRITER_PROMPT,
 )
+from src.search import SearchProvider, SearchResultItem
 from src.state import CrewState
 from src.tools import save_report
 
@@ -40,10 +42,10 @@ from src.tools import save_report
 # 搜索提供商 (延迟初始化)
 # ═══════════════════════════════════════════
 
-_search_provider = None
+_search_provider: SearchProvider | None = None
 
 
-def _get_search_provider():
+def _get_search_provider() -> SearchProvider:
     """获取搜索提供商
 
     有 TAVILY_API_KEY 时使用 Tavily, 否则使用模拟搜索。
@@ -58,12 +60,11 @@ def _get_search_provider():
         _search_provider = TavilySearchProvider(api_key=settings.TAVILY_API_KEY)
     else:
         # 模拟搜索 (开发/演示用)
-        from src.search import SearchResultItem as MockItem
-
         class MockSearchProvider:
-            async def search(self, query, **kwargs):
+            async def search(self, query: str, **kwargs: object) -> list[SearchResultItem]:
+                max_results = cast(int, kwargs.get("max_results", 5))
                 return [
-                    MockItem(
+                    SearchResultItem(
                         query=query,
                         url=f"https://example.com/result-{i}",
                         title=f"关于 '{query[:20]}' 的第 {i + 1} 条结果",
@@ -73,7 +74,7 @@ def _get_search_provider():
                         ),
                         publisher="example.com",
                     )
-                    for i in range(min(kwargs.get("max_results", 5), 5))
+                    for i in range(min(max_results, 5))
                 ]
 
         _search_provider = MockSearchProvider()
@@ -86,7 +87,7 @@ def _get_search_provider():
 # ═══════════════════════════════════════════
 
 
-def _get_llm(model: str | None = None, temperature: float = 0.3):
+def _get_llm(model: str | None = None, temperature: float = 0.3) -> ChatOpenAI:
     """获取 LLM 实例"""
     return ChatOpenAI(
         model=model or settings.RESEARCHER_MODEL,
@@ -96,7 +97,7 @@ def _get_llm(model: str | None = None, temperature: float = 0.3):
     )
 
 
-def _structured_llm(model: str | None = None):
+def _structured_llm(model: str | None = None) -> ChatOpenAI:
     """获取支持结构化输出的 LLM 实例"""
     return ChatOpenAI(
         model=model or settings.REVIEWER_MODEL,
@@ -118,7 +119,7 @@ def _start_record(node_name: str) -> NodeExecutionRecord:
 # ═══════════════════════════════════════════
 
 
-def validate_input_node(state: CrewState) -> dict:
+def validate_input_node(state: CrewState) -> dict[str, object]:
     """输入校验 — 纯逻辑, 不调用 LLM"""
     print("  [Validate] 校验输入...")
 
@@ -135,7 +136,7 @@ def validate_input_node(state: CrewState) -> dict:
 # ═══════════════════════════════════════════
 
 
-async def researcher_node(state: CrewState) -> dict:
+async def researcher_node(state: CrewState) -> dict[str, object]:
     """研究专员：使用 SearchProvider 搜集真实信息"""
     print("  [Researcher] 正在搜索信息...")
     record = _start_record("researcher")
@@ -231,7 +232,7 @@ async def researcher_node(state: CrewState) -> dict:
 # ═══════════════════════════════════════════
 
 
-def source_processor_node(state: CrewState) -> dict:
+def source_processor_node(state: CrewState) -> dict[str, object]:
     """来源处理器：抓取正文、去重、可信度评估、保存快照"""
     print("  [SourceProcessor] 正在处理来源...")
     record = _start_record("source_processor")
@@ -327,7 +328,7 @@ def source_processor_node(state: CrewState) -> dict:
 # ═══════════════════════════════════════════
 
 
-def analyst_node(state: CrewState) -> dict:
+def analyst_node(state: CrewState) -> dict[str, object]:
     """分析师：基于搜集的信息分析"""
     print("  [Analyst] 正在分析信息...")
     record = _start_record("analyst")
@@ -369,15 +370,16 @@ def analyst_node(state: CrewState) -> dict:
 # ═══════════════════════════════════════════
 
 
-def writer_node(state: CrewState) -> dict:
+def writer_node(state: CrewState) -> dict[str, object]:
     """撰稿人：撰写/修改报告"""
     print("  [Writer] 正在撰写报告...")
     record = _start_record("writer")
 
     feedback_section = ""
-    if state.get("review") and state["review"].issues:
+    review = state.get("review")
+    if review and review.issues:
         issues_str = "\n".join(
-            f"- [{i.severity}] {i.category}: {i.description}" for i in state["review"].issues
+            f"- [{i.severity}] {i.category}: {i.description}" for i in review.issues
         )
         feedback_section = f"审查反馈 (请据此修改):\n{issues_str}"
 
@@ -442,7 +444,7 @@ def writer_node(state: CrewState) -> dict:
 # ═══════════════════════════════════════════
 
 
-def reviewer_node(state: CrewState) -> dict:
+def reviewer_node(state: CrewState) -> dict[str, object]:
     """审查员：结构化质量审查"""
     print("  [Reviewer] 正在审查报告...")
     record = _start_record("reviewer")
@@ -480,7 +482,7 @@ def reviewer_node(state: CrewState) -> dict:
     ]
 
     try:
-        review: ReviewResult = structured_reviewer.invoke(msgs)
+        review = cast(ReviewResult, structured_reviewer.invoke(msgs))
         record.status = "completed"
         record.ended_at = datetime.now()
 
@@ -539,7 +541,7 @@ def reviewer_node(state: CrewState) -> dict:
 # ═══════════════════════════════════════════
 
 
-def publisher_node(state: CrewState) -> dict:
+def publisher_node(state: CrewState) -> dict[str, object]:
     """发布员：固化最终版本并导出"""
     print("  [Publisher] 正在固化最终报告...")
     record = _start_record("publisher")
@@ -590,12 +592,12 @@ def publisher_node(state: CrewState) -> dict:
 # ═══════════════════════════════════════════
 
 
-def human_review_node(state: CrewState) -> dict:
+def human_review_node(state: CrewState) -> dict[str, object]:
     """人工审查节点 — 使用 interrupt() 暂停"""
     print("  [HumanReview] 等待人工审批...")
 
     review = state.get("review")
-    draft = state.get("draft", "")
+    draft = state.get("draft") or ""
 
     review_info = {
         "run_id": state["run_id"],
@@ -626,7 +628,7 @@ def human_review_node(state: CrewState) -> dict:
 
     print(f"  [HumanReview] 决策: {decision.action}")
 
-    result: dict = {
+    result: dict[str, object] = {
         "human_decision": decision,
         "current_node": "human_review",
         "updated_at": datetime.now(),
@@ -644,7 +646,7 @@ def human_review_node(state: CrewState) -> dict:
 # ═══════════════════════════════════════════
 
 
-def claim_builder_node(state: CrewState) -> dict:
+def claim_builder_node(state: CrewState) -> dict[str, object]:
     """结论提取节点：从来源正文中提取结构化 Claim 和 Evidence
 
     使用 structured output 确保每个结论都有原文引用。
@@ -704,7 +706,7 @@ def claim_builder_node(state: CrewState) -> dict:
 # ═══════════════════════════════════════════
 
 
-def citation_checker_node(state: CrewState) -> dict:
+def citation_checker_node(state: CrewState) -> dict[str, object]:
     """引用检查器：检查引用有效性和覆盖度
 
     纯确定性代码，不调用 LLM：
