@@ -4,6 +4,38 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import TypedDict
+
+
+class TokenUsageData(TypedDict):
+    """Serialized token usage for one LLM call."""
+
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    cost_usd: float
+
+
+class TokenCount(TypedDict, total=False):
+    """Token counters accepted by :func:`estimate_run_cost`."""
+
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+
+
+class CostSummary(TypedDict):
+    """Aggregate token and cost metrics."""
+
+    total_calls: int
+    total_prompt_tokens: int
+    total_completion_tokens: int
+    total_tokens: int
+    cost_usd: float
+    max_cost_usd: float | None
+    exceeded: bool
+
 
 # ── 模型定价 (每 1K token, USD) ──
 # 来源: OpenAI 2025-06 定价
@@ -42,7 +74,7 @@ class TokenUsage:
         output_cost = (self.completion_tokens / 1000) * pricing["output"]
         return Decimal(str(round(input_cost + output_cost, 6)))
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> TokenUsageData:
         return {
             "model": self.model,
             "prompt_tokens": self.prompt_tokens,
@@ -91,7 +123,7 @@ class CostBudget:
             return False
         return self._spent >= self.max_cost_usd
 
-    def summary(self) -> dict:
+    def summary(self) -> CostSummary:
         return {
             "total_calls": self.total_calls,
             "total_prompt_tokens": self.total_prompt_tokens,
@@ -103,7 +135,7 @@ class CostBudget:
         }
 
 
-def estimate_run_cost(token_counts: list[dict]) -> dict:
+def estimate_run_cost(token_counts: list[TokenCount]) -> CostSummary:
     """从记录列表估算总成本"""
     budget = CostBudget()
     for tc in token_counts:

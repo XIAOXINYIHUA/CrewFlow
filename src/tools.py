@@ -6,8 +6,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TypedDict
 
 from src.config import settings
+
+
+class WebpageFetchResult(TypedDict):
+    """Result returned by the placeholder webpage fetcher."""
+
+    content: str
+    error: str | None
+
 
 # ═══════════════════════════════════════════
 # 搜索结果模型 (类型提示用, 运行时由 models 提供)
@@ -63,7 +72,7 @@ def web_search(query: str) -> str:
 # ═══════════════════════════════════════════
 
 
-def fetch_webpage(url: str, timeout: int = 15) -> dict:
+def fetch_webpage(url: str, timeout: int = 15) -> WebpageFetchResult:
     """抓取网页正文
 
     当前为占位实现。PR 2 将使用 httpx + trafilatura 实现:

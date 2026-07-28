@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TypedDict
 
 from sqlalchemy import (
     Boolean,
@@ -12,10 +13,31 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
+
+
+class ResearchRunDict(TypedDict):
+    """Serialized fields exposed by :meth:`ResearchRunORM.to_dict`."""
+
+    run_id: str
+    thread_id: str
+    topic: str
+    status: str
+    quality_status: str
+    language: str
+    require_human_approval: bool
+    current_node: str | None
+    iteration: int
+    total_cost_usd: float
+    error_count: int
+    created_at: str
+    updated_at: str
+    completed_at: str | None
+
 
 # ═══════════════════════════════════════════
 # 研究运行
@@ -45,7 +67,7 @@ class ResearchRunORM(Base):
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> ResearchRunDict:
         return {
             "run_id": self.id,
             "thread_id": self.thread_id,
@@ -198,3 +220,17 @@ class NodeExecutionORM(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class RunEventORM(Base):
+    """Persisted SSE event for replay and reconnect."""
+
+    __tablename__ = "run_events"
+    __table_args__ = (UniqueConstraint("run_id", "sequence", name="uq_run_event_sequence"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(32), ForeignKey("research_runs.id"), index=True)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)

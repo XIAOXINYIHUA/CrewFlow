@@ -7,7 +7,10 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from opentelemetry.trace import Tracer
 
 
 def is_tracing_enabled() -> bool:
@@ -53,7 +56,7 @@ def setup_tracing(service_name: str = "crewflow") -> None:
         print(f"  [Tracing] 初始化失败: {e}")
 
 
-def get_tracer(name: str = "crewflow"):
+def get_tracer(name: str = "crewflow") -> Tracer:
     """获取 tracer 实例
 
     用法:

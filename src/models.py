@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 
 # ═══════════════════════════════════════════
 # 枚举和字面量类型
@@ -113,8 +113,9 @@ class ResearchRequirements(BaseModel):
 
     @field_validator("date_to")
     @classmethod
-    def date_range_valid(cls, v: date | None, info) -> date | None:
-        if v and info.data.get("date_from") and v < info.data["date_from"]:
+    def date_range_valid(cls, v: date | None, info: ValidationInfo) -> date | None:
+        date_from = info.data.get("date_from")
+        if v and isinstance(date_from, date) and v < date_from:
             raise ValueError("date_to 不能早于 date_from")
         return v
 
@@ -267,7 +268,7 @@ class ReportVersion(BaseModel):
     run_id: str = Field(..., description="关联的运行 ID")
     version: int = Field(1, ge=1, description="版本号")
     markdown: str = Field("", description="报告正文 (Markdown)")
-    outline: dict = Field(default_factory=dict, description="报告大纲结构")
+    outline: dict[str, object] = Field(default_factory=dict, description="报告大纲结构")
     citation_ids: list[str] = Field(default_factory=list, description="引用到的来源 ID 列表")
     created_by_node: str = Field("", description="创建此版本的节点名称")
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")

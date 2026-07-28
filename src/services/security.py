@@ -3,6 +3,16 @@
 from __future__ import annotations
 
 import re
+from typing import TypedDict
+
+
+class InjectionFinding(TypedDict):
+    """A prompt-injection pattern match."""
+
+    position: int
+    matched: str
+    pattern: str
+
 
 # ═══════════════════════════════════════════
 # HTML 清洗
@@ -96,7 +106,7 @@ def sanitize_markdown_html(markdown: str) -> str:
         return markdown
 
     # 只清洗 HTML 块
-    def _replace_html_block(match):
+    def _replace_html_block(match: re.Match[str]) -> str:
         return sanitize_html(match.group(0))
 
     # 匹配可能包含 HTML 的代码块
@@ -158,7 +168,7 @@ INJECTION_PATTERNS = [
 ]
 
 
-def detect_injection(content: str) -> list[dict]:
+def detect_injection(content: str) -> list[InjectionFinding]:
     """检测内容中的 Prompt Injection 模式
 
     Args:
@@ -167,7 +177,7 @@ def detect_injection(content: str) -> list[dict]:
     Returns:
         匹配的注入模式列表, 包含位置和模式描述
     """
-    findings: list[dict] = []
+    findings: list[InjectionFinding] = []
     for pattern in INJECTION_PATTERNS:
         for match in pattern.finditer(content):
             findings.append(

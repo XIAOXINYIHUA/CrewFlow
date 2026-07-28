@@ -3,31 +3,49 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
+from src import __version__
 from src.config import settings
-from src.database import init_db
-from src.graph import build_graph
-from src.models import HumanDecision
+from src.database import close_db, init_db, ping_db
+from src.graph import reset_graph
+from src.models import HumanAction, HumanDecision, ResearchRequirements
+from src.orm_models import ResearchRunORM
 from src.repository import (
+    count_runs,
     create_run,
     get_report_versions,
     get_run,
+    get_run_events,
     get_sources,
     list_runs,
     save_human_decision,
     update_run_status,
 )
+from src.runtime import run_coordinator
 from src.state import create_initial_state
 
-app = FastAPI(title="CrewFlow API", version="0.2.0")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    init_db()
+    await run_coordinator.recover_incomplete()
+    yield
+    await run_coordinator.shutdown()
+    reset_graph()
+    close_db()
+
+
+app = FastAPI(title="CrewFlow API", version=__version__, lifespan=lifespan)
 
 
 # ═══════════════════════════════════════════
@@ -66,7 +84,7 @@ class CreateRunRequest(BaseModel):
 
 
 class ReviewRequest(BaseModel):
-    action: str = Field(..., pattern="^(approve|revise|cancel)$")
+    action: HumanAction
     feedback: str = ""
 
 
@@ -126,6 +144,24 @@ class ReportVersionResponse(BaseModel):
     citation_count: int = 0
 
 
+async def _require_run(run_id: str) -> ResearchRunORM:
+    run = await asyncio.to_thread(get_run, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    return run
+
+
+def _read_artifact_preview(location: str, limit: int = 20000) -> str:
+    """Read only files inside the configured artifact directory."""
+    if not location:
+        return ""
+    artifact_root = settings.ARTIFACTS_DIR.resolve()
+    path = Path(location).resolve()
+    if not path.is_relative_to(artifact_root) or not path.is_file():
+        return ""
+    return path.read_text(encoding="utf-8")[:limit]
+
+
 # ═══════════════════════════════════════════
 # SSE 事件流 (支持断线重连 last-event-id)
 # ═══════════════════════════════════════════
@@ -133,75 +169,29 @@ class ReportVersionResponse(BaseModel):
 
 async def event_stream(
     run_id: str,
-    thread_id: str,
-    initial_state: dict,
+    request: Request,
     last_event_id: int = 0,
 ) -> AsyncGenerator[str, None]:
-    """SSE 事件流, 支持 last-event-id 断线重连"""
-    graph = build_graph()
-    config = {"configurable": {"thread_id": thread_id}}
+    """Replay persisted events, then stream new events without rerunning the graph."""
+    cursor = max(last_event_id, 0)
+    while True:
+        events = await asyncio.to_thread(get_run_events, run_id, cursor)
+        for event in events:
+            cursor = event.sequence
+            yield (
+                f"id: {event.sequence}\nevent: {event.event_type}\ndata: {event.payload_json}\n\n"
+            )
 
-    update_run_status(run_id, "running")
-    yield f"id: 0\ndata: {json.dumps({'type': 'started', 'run_id': run_id})}\n\n"
-
-    def _run():
-        return list(graph.stream(initial_state, config=config, stream_mode="updates"))
-
-    try:
-        events = await asyncio.to_thread(_run)
-
-        for event_id, event in enumerate(events, 1):
-            if event_id <= last_event_id:
-                continue  # 跳过已发送事件
-
-            for node_name, update in event.items():
-                if node_name == "__interrupt__":
-                    update_run_status(run_id, "waiting_human", current_node="human_review")
-                    payload = {
-                        "type": "interrupt",
-                        "node": "human_review",
-                        "run_id": run_id,
-                    }
-                    yield f"id: {event_id}\ndata: {json.dumps(payload)}\n\n"
-                    continue
-
-                payload: dict = {
-                    "type": "node_completed",
-                    "node": node_name,
-                    "run_id": run_id,
-                    "status": update.get("status", "running"),
-                }
-                review = update.get("review")
-                if review:
-                    payload["review_verdict"] = review.verdict
-                    payload["review_scores"] = {
-                        "factuality": review.factuality_score,
-                        "citation": review.citation_score,
-                        "coverage": review.coverage_score,
-                        "structure": review.structure_score,
-                    }
-                errors = update.get("errors")
-                if errors:
-                    payload["errors"] = [e for e in errors if e]
-                yield f"id: {event_id}\ndata: {json.dumps(payload)}\n\n"
-
-        final_state = graph.get_state(config)
-        report = final_state.values.get("final_report", "")
-        status = final_state.values.get("status", "completed")
-        update_run_status(run_id, status)
-        payload = {
-            "type": "completed",
-            "run_id": run_id,
-            "status": status,
-            "has_report": bool(report),
-        }
-        yield f"id: {event_id + 1}\ndata: {json.dumps(payload)}\n\n"
-
-    except Exception as e:
-        update_run_status(run_id, "failed")
-        yield f"data: {json.dumps({'type': 'error', 'run_id': run_id, 'error': str(e)})}\n\n"
-    finally:
-        yield "data: [DONE]\n\n"
+        run = await asyncio.to_thread(get_run, run_id)
+        if run is None:
+            return
+        if run.status in {"waiting_human", "completed", "failed", "cancelled"}:
+            yield "data: [DONE]\n\n"
+            return
+        if await request.is_disconnected():
+            return
+        if not await run_coordinator.wait_for_update(run_id):
+            yield ": keep-alive\n\n"
 
 
 # ═══════════════════════════════════════════
@@ -210,21 +200,31 @@ async def event_stream(
 
 
 @app.get("/health")
-async def health_check():
+async def health_check() -> dict[str, object]:
     """服务健康检查"""
     return {
         "status": "ok",
-        "version": "0.2.0",
+        "version": __version__,
         "has_openai_key": bool(settings.OPENAI_API_KEY),
         "has_tavily_key": bool(settings.TAVILY_API_KEY),
     }
 
 
+@app.get("/ready")
+async def readiness_check() -> dict[str, str]:
+    """Verify dependencies required to accept research runs."""
+    try:
+        await asyncio.to_thread(ping_db)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"database unavailable: {exc}") from exc
+    return {"status": "ready", "version": __version__}
+
+
 @app.get("/api/v1/info")
-async def api_info():
+async def api_info() -> dict[str, object]:
     """API 版本和功能信息"""
     return {
-        "version": "0.2.0",
+        "version": __version__,
         "features": [
             "research_runs",
             "human_review",
@@ -249,17 +249,8 @@ async def api_info():
 # ═══════════════════════════════════════════
 
 
-@app.on_event("startup")
-async def startup():
-    try:
-        init_db()
-        print("  [API] 数据库初始化完成")
-    except Exception as e:
-        print(f"  [API] 数据库初始化跳过: {e}")
-
-
 @app.post("/api/v1/runs", response_model=CreateRunResponse, status_code=201)
-async def create_run_endpoint(req: CreateRunRequest):
+async def create_run_endpoint(req: CreateRunRequest) -> CreateRunResponse:
     """创建研究任务并立即启动
 
     返回 run_id 和 thread_id。通过 GET /runs/{run_id}/events 接收实时事件。
@@ -267,24 +258,50 @@ async def create_run_endpoint(req: CreateRunRequest):
     run_id = f"run_{uuid.uuid4().hex[:12]}"
     thread_id = f"thread_{uuid.uuid4().hex[:12]}"
 
-    create_run(
-        run_id=run_id,
-        thread_id=thread_id,
-        topic=req.topic,
+    await asyncio.to_thread(
+        create_run,
+        run_id,
+        thread_id,
+        req.topic,
         language=req.language,
         target_words=req.target_words,
         require_human_approval=req.require_human_approval,
     )
+    requirements = ResearchRequirements(
+        topic=req.topic,
+        purpose=req.purpose,
+        audience=req.audience,
+        language=req.language,
+        target_words=req.target_words,
+        preferred_domains=req.preferred_domains,
+        excluded_domains=req.excluded_domains,
+        require_human_approval=req.require_human_approval,
+        max_iterations=settings.MAX_ITERATIONS,
+        max_queries=settings.MAX_QUERIES,
+        max_sources=req.max_sources,
+        max_cost_usd=settings.MAX_BUDGET_USD,
+    )
+    initial_state = create_initial_state(
+        topic=req.topic,
+        run_id=run_id,
+        thread_id=thread_id,
+        requirements=requirements,
+        require_human_approval=req.require_human_approval,
+        status="running",
+    )
+    try:
+        await run_coordinator.start(run_id, thread_id, initial_state)
+    except Exception as exc:
+        await asyncio.to_thread(update_run_status, run_id, "failed")
+        raise HTTPException(status_code=500, detail=f"任务启动失败: {exc}") from exc
 
-    return CreateRunResponse(run_id=run_id, thread_id=thread_id, status="queued")
+    return CreateRunResponse(run_id=run_id, thread_id=thread_id, status="running")
 
 
 @app.get("/api/v1/runs/{run_id}", response_model=RunInfoResponse)
-async def get_run_endpoint(run_id: str):
+async def get_run_endpoint(run_id: str) -> RunInfoResponse:
     """查询单个任务状态"""
-    run = get_run(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    run = await _require_run(run_id)
 
     info = run.to_dict()
     return RunInfoResponse(
@@ -309,19 +326,12 @@ async def list_runs_endpoint(
     status: str | None = Query(
         None, pattern="^(queued|running|waiting_human|completed|failed|cancelled)$"
     ),
-):
+) -> RunListResponse:
     """列出任务, 支持分页和状态筛选"""
-    all_runs = list_runs(limit=limit + offset, offset=0)
-
-    # 状态筛选
-    if status:
-        filtered = [r for r in all_runs if r.status == status]
-    else:
-        filtered = all_runs
-
-    # 分页
-    page = filtered[offset : offset + limit]
-    total = len(filtered)
+    page, total = await asyncio.gather(
+        asyncio.to_thread(list_runs, limit, offset, status),
+        asyncio.to_thread(count_runs, status),
+    )
     has_more = (offset + limit) < total
 
     items = [
@@ -352,40 +362,28 @@ async def list_runs_endpoint(
 
 
 @app.get("/api/v1/runs/{run_id}/events")
-async def stream_run_events(run_id: str, request: Request):
+async def stream_run_events(
+    run_id: str,
+    request: Request,
+    after: int = Query(0, ge=0, description="Replay events after this sequence"),
+) -> StreamingResponse:
     """运行事件 SSE 流
 
     前端使用 EventSource 连接。
     支持断线重连: 通过 Last-Event-ID header 从断点继续。
     """
-    run = get_run(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
-
-    if run.status in ("completed", "failed", "cancelled"):
-        payload = {"type": "done", "run_id": run_id, "status": run.status}
-        return PlainTextResponse(
-            content=f"data: {json.dumps(payload)}\n\ndata: [DONE]\n\n",
-            media_type="text/event-stream",
-        )
+    run = await _require_run(run_id)
 
     # 断线重连
-    last_event_id = 0
+    last_event_id = after
     if request.headers.get("last-event-id"):
         try:
             last_event_id = int(request.headers["last-event-id"])
         except (ValueError, TypeError):
             pass
 
-    initial_state = create_initial_state(
-        topic=run.topic,
-        run_id=run.id,
-        thread_id=run.thread_id,
-        require_human_approval=run.require_human_approval,
-    )
-
     return StreamingResponse(
-        event_stream(run.id, run.thread_id, initial_state, last_event_id=last_event_id),
+        event_stream(run.id, request, last_event_id=last_event_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -401,15 +399,13 @@ async def stream_run_events(run_id: str, request: Request):
 
 
 @app.post("/api/v1/runs/{run_id}/review")
-async def review_run(run_id: str, req: ReviewRequest):
+async def review_run(run_id: str, req: ReviewRequest) -> dict[str, str]:
     """人工审批任务
 
     只有 waiting_human 状态的任务可以审批。
     合法动作: approve (发布), revise (退回修改), cancel (取消)
     """
-    run = get_run(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    run = await _require_run(run_id)
 
     if run.status != "waiting_human":
         raise HTTPException(
@@ -417,25 +413,27 @@ async def review_run(run_id: str, req: ReviewRequest):
             detail=f"任务状态为 {run.status}, 不可审批。仅 waiting_human 可审批。",
         )
 
+    if req.action == "revise" and not req.feedback.strip():
+        raise HTTPException(status_code=400, detail="退回修改时必须提供 feedback")
+
     decision = HumanDecision(action=req.action, feedback=req.feedback)
-    save_human_decision(run_id, decision)
+    await asyncio.to_thread(save_human_decision, run_id, decision)
 
-    # 恢复图执行
-    graph = build_graph()
-    config = {"configurable": {"thread_id": run.thread_id}}
-
-    try:
+    if req.action == "cancel":
+        await run_coordinator.cancel(run_id)
+        new_status = "cancelled"
+    else:
         from langgraph.types import Command
 
-        graph.invoke(
+        started = await run_coordinator.start(
+            run_id,
+            run.thread_id,
             Command(resume={"action": req.action, "feedback": req.feedback}),
-            config=config,
+            event_type="resumed",
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"恢复图执行失败: {e}")
-
-    new_status = "cancelled" if req.action == "cancel" else "running"
-    update_run_status(run_id, new_status)
+        if not started:
+            raise HTTPException(status_code=409, detail="任务已在恢复或运行中")
+        new_status = "running"
 
     return {
         "run_id": run_id,
@@ -457,13 +455,11 @@ async def get_run_sources(
     min_credibility: float | None = Query(None, ge=0.0, le=1.0),
     status: str | None = Query(None, pattern="^(pending|success|failed)$"),
     limit: int = Query(50, ge=1, le=200),
-):
+) -> list[SourceResponse]:
     """获取研究的来源列表, 支持筛选"""
-    run = get_run(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    await _require_run(run_id)
 
-    sources = get_sources(run_id)
+    sources = await asyncio.to_thread(get_sources, run_id)
 
     # 筛选
     if source_type:
@@ -489,24 +485,14 @@ async def get_run_sources(
 
 
 @app.get("/api/v1/runs/{run_id}/sources/{source_id}")
-async def get_source_detail(run_id: str, source_id: str):
+async def get_source_detail(run_id: str, source_id: str) -> dict[str, object]:
     """获取单个来源详情, 含提取的正文"""
-    if not get_run(run_id):
-        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    await _require_run(run_id)
 
-    sources = get_sources(run_id)
+    sources = await asyncio.to_thread(get_sources, run_id)
     for s in sources:
         if s.id == source_id:
-            content = ""
-            if s.content_location:
-                try:
-                    import os.path
-
-                    if os.path.exists(s.content_location):
-                        with open(s.content_location, encoding="utf-8") as f:
-                            content = f.read()[:20000]
-                except Exception:
-                    pass
+            content = await asyncio.to_thread(_read_artifact_preview, s.content_location)
 
             return {
                 "id": s.id,
@@ -532,11 +518,10 @@ async def get_source_detail(run_id: str, source_id: str):
 
 
 @app.get("/api/v1/runs/{run_id}/reports")
-async def get_run_reports(run_id: str):
+async def get_run_reports(run_id: str) -> list[ReportVersionResponse]:
     """获取报告版本列表"""
-    if not get_run(run_id):
-        raise HTTPException(status_code=404)
-    versions = get_report_versions(run_id)
+    await _require_run(run_id)
+    versions = await asyncio.to_thread(get_report_versions, run_id)
     return [
         ReportVersionResponse(
             id=v.id,
@@ -550,11 +535,10 @@ async def get_run_reports(run_id: str):
 
 
 @app.get("/api/v1/runs/{run_id}/reports/{version_id}")
-async def get_report_detail(run_id: str, version_id: str):
+async def get_report_detail(run_id: str, version_id: str) -> dict[str, object]:
     """获取某版本报告的完整内容"""
-    if not get_run(run_id):
-        raise HTTPException(status_code=404)
-    versions = get_report_versions(run_id)
+    await _require_run(run_id)
+    versions = await asyncio.to_thread(get_report_versions, run_id)
     for v in versions:
         if v.id == version_id:
             return {
@@ -574,25 +558,26 @@ async def get_report_detail(run_id: str, version_id: str):
 # ═══════════════════════════════════════════
 
 
-@app.get("/api/v1/runs/{run_id}/export")
-async def export_report(run_id: str, format: str = "markdown"):
+@app.get("/api/v1/runs/{run_id}/export", response_model=None)
+async def export_report(
+    run_id: str,
+    format: Literal["markdown", "json"] = Query("markdown"),
+) -> PlainTextResponse | dict[str, object]:
     """导出最终报告
 
     支持格式: markdown, json
     JSON 格式包含来源和 Claim 映射, 便于其他系统继续使用。
     """
-    run = get_run(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+    run = await _require_run(run_id)
 
-    versions = get_report_versions(run_id)
+    versions = await asyncio.to_thread(get_report_versions, run_id)
     if not versions:
         raise HTTPException(status_code=404, detail="该任务没有报告版本")
 
     latest = versions[0]
 
     if format == "json":
-        sources = get_sources(run_id)
+        sources = await asyncio.to_thread(get_sources, run_id)
         return {
             "run_id": run_id,
             "topic": run.topic,
@@ -615,7 +600,7 @@ async def export_report(run_id: str, format: str = "markdown"):
                 for s in sources
             ],
             "exported_at": datetime.now().isoformat(),
-            "crewflow_version": "0.2.0",
+            "crewflow_version": __version__,
         }
 
     return PlainTextResponse(
@@ -628,11 +613,10 @@ async def export_report(run_id: str, format: str = "markdown"):
 
 
 @app.get("/api/v1/runs/{run_id}/export/versions")
-async def export_all_versions(run_id: str):
+async def export_all_versions(run_id: str) -> list[dict[str, object]]:
     """导出所有报告版本 (JSON)"""
-    if not get_run(run_id):
-        raise HTTPException(status_code=404)
-    versions = get_report_versions(run_id)
+    await _require_run(run_id)
+    versions = await asyncio.to_thread(get_report_versions, run_id)
     return [
         {
             "version": v.version,
@@ -651,14 +635,14 @@ async def export_all_versions(run_id: str):
 
 
 @app.post("/api/v1/runs/{run_id}/cancel")
-async def cancel_run(run_id: str):
+async def cancel_run(run_id: str) -> dict[str, str]:
     """取消任务"""
-    run = get_run(run_id)
+    run = await asyncio.to_thread(get_run, run_id)
     if not run:
         raise HTTPException(status_code=404)
     if run.status in ("completed", "cancelled"):
         raise HTTPException(status_code=400, detail=f"任务已{run.status}, 无法取消")
-    update_run_status(run_id, "cancelled")
+    await run_coordinator.cancel(run_id)
     return {"run_id": run_id, "status": "cancelled"}
 
 

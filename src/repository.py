@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
+from sqlalchemy import func, select
+
 from src.database import get_session
 from src.models import (
     Claim,
@@ -23,6 +25,7 @@ from src.orm_models import (
     ReportVersionORM,
     ResearchRunORM,
     ReviewORM,
+    RunEventORM,
     SourceORM,
 )
 
@@ -31,7 +34,7 @@ from src.orm_models import (
 # ═══════════════════════════════════════════
 
 
-def create_run(run_id: str, thread_id: str, topic: str, **kwargs) -> ResearchRunORM:
+def create_run(run_id: str, thread_id: str, topic: str, **kwargs: object) -> ResearchRunORM:
     """创建新运行记录"""
     session = get_session()
     try:
@@ -58,39 +61,53 @@ def get_run(run_id: str) -> ResearchRunORM | None:
     """获取运行记录"""
     session = get_session()
     try:
-        return session.query(ResearchRunORM).filter(ResearchRunORM.id == run_id).first()
+        return session.scalar(select(ResearchRunORM).where(ResearchRunORM.id == run_id))
     finally:
         session.close()
 
 
-def update_run_status(run_id: str, status: str, **updates) -> None:
+def update_run_status(run_id: str, status: str, **updates: object) -> None:
     """更新运行状态"""
     session = get_session()
     try:
-        run = session.query(ResearchRunORM).filter(ResearchRunORM.id == run_id).first()
+        run = session.scalar(select(ResearchRunORM).where(ResearchRunORM.id == run_id))
         if run:
             run.status = status
             run.updated_at = datetime.now()
             for key, value in updates.items():
                 setattr(run, key, value)
-            if status == "completed":
+            if status in {"completed", "failed", "cancelled"}:
                 run.completed_at = datetime.now()
             session.commit()
     finally:
         session.close()
 
 
-def list_runs(limit: int = 20, offset: int = 0) -> list[ResearchRunORM]:
+def list_runs(
+    limit: int = 20,
+    offset: int = 0,
+    status: str | None = None,
+) -> list[ResearchRunORM]:
     """列出运行记录"""
     session = get_session()
     try:
-        return (
-            session.query(ResearchRunORM)
-            .order_by(ResearchRunORM.created_at.desc())
-            .offset(offset)
-            .limit(limit)
-            .all()
-        )
+        query = select(ResearchRunORM)
+        if status:
+            query = query.where(ResearchRunORM.status == status)
+        statement = query.order_by(ResearchRunORM.created_at.desc()).offset(offset).limit(limit)
+        return list(session.scalars(statement).all())
+    finally:
+        session.close()
+
+
+def count_runs(status: str | None = None) -> int:
+    """Count runs with the same filter semantics as ``list_runs``."""
+    session = get_session()
+    try:
+        query = select(func.count(ResearchRunORM.id))
+        if status:
+            query = query.where(ResearchRunORM.status == status)
+        return int(session.scalar(query) or 0)
     finally:
         session.close()
 
@@ -135,7 +152,8 @@ def get_sources(run_id: str) -> list[SourceORM]:
     """获取运行的所有来源"""
     session = get_session()
     try:
-        return session.query(SourceORM).filter(SourceORM.run_id == run_id).all()
+        statement = select(SourceORM).where(SourceORM.run_id == run_id)
+        return list(session.scalars(statement).all())
     finally:
         session.close()
 
@@ -162,6 +180,7 @@ def save_claims(run_id: str, claims: list[Claim]) -> int:
             session.merge(orm)
 
             # 保存证据
+            session.query(EvidenceORM).filter(EvidenceORM.claim_id == claim.id).delete()
             for ev in claim.evidence:
                 ev_orm = EvidenceORM(
                     id=new_id("ev_"),
@@ -197,7 +216,7 @@ def save_report_version(run_id: str, version: ReportVersion) -> None:
             created_at=version.created_at,
             citation_ids=json.dumps(version.citation_ids, ensure_ascii=False),
         )
-        session.add(orm)
+        session.merge(orm)
         session.commit()
     finally:
         session.close()
@@ -207,12 +226,12 @@ def get_report_versions(run_id: str) -> list[ReportVersionORM]:
     """获取报告版本列表"""
     session = get_session()
     try:
-        return (
-            session.query(ReportVersionORM)
-            .filter(ReportVersionORM.run_id == run_id)
+        statement = (
+            select(ReportVersionORM)
+            .where(ReportVersionORM.run_id == run_id)
             .order_by(ReportVersionORM.version.desc())
-            .all()
         )
+        return list(session.scalars(statement).all())
     finally:
         session.close()
 
@@ -226,25 +245,27 @@ def save_review(run_id: str, iteration: int, review: ReviewResult) -> None:
     """保存审查记录"""
     session = get_session()
     try:
-        orm = ReviewORM(
-            id=new_id("rev_"),
-            run_id=run_id,
-            iteration=iteration,
-            verdict=review.verdict,
-            factuality_score=review.factuality_score,
-            citation_score=review.citation_score,
-            coverage_score=review.coverage_score,
-            structure_score=review.structure_score,
-            issues_json=json.dumps(
-                [i.model_dump() for i in review.issues],
-                ensure_ascii=False,
+        orm = session.scalar(
+            select(ReviewORM).where(
+                ReviewORM.run_id == run_id,
+                ReviewORM.iteration == iteration,
             )
-            if review.issues
-            else None,
-            summary=review.summary,
-            created_at=datetime.now(),
         )
-        session.add(orm)
+        if orm is None:
+            orm = ReviewORM(id=new_id("rev_"), run_id=run_id, iteration=iteration)
+            session.add(orm)
+        orm.verdict = review.verdict
+        orm.factuality_score = review.factuality_score
+        orm.citation_score = review.citation_score
+        orm.coverage_score = review.coverage_score
+        orm.structure_score = review.structure_score
+        orm.issues_json = (
+            json.dumps([i.model_dump() for i in review.issues], ensure_ascii=False)
+            if review.issues
+            else None
+        )
+        orm.summary = review.summary
+        orm.created_at = datetime.now()
         session.commit()
     finally:
         session.close()
@@ -292,5 +313,47 @@ def save_node_execution(run_id: str, record: NodeExecutionRecord) -> None:
         )
         session.add(orm)
         session.commit()
+    finally:
+        session.close()
+
+
+# ═══════════════════════════════════════════
+# 持久运行事件
+# ═══════════════════════════════════════════
+
+
+def append_run_event(run_id: str, event_type: str, payload: dict[str, object]) -> RunEventORM:
+    """Append one replayable event and allocate a per-run sequence number."""
+    session = get_session()
+    try:
+        last_sequence = session.scalar(
+            select(func.max(RunEventORM.sequence)).where(RunEventORM.run_id == run_id)
+        )
+        event = RunEventORM(
+            id=new_id("evt_"),
+            run_id=run_id,
+            sequence=(last_sequence or 0) + 1,
+            event_type=event_type,
+            payload_json=json.dumps(payload, ensure_ascii=False, default=str),
+            created_at=datetime.now(),
+        )
+        session.add(event)
+        session.commit()
+        session.refresh(event)
+        return event
+    finally:
+        session.close()
+
+
+def get_run_events(run_id: str, after_sequence: int = 0) -> list[RunEventORM]:
+    """Load persisted events after a client-provided SSE cursor."""
+    session = get_session()
+    try:
+        statement = (
+            select(RunEventORM)
+            .where(RunEventORM.run_id == run_id, RunEventORM.sequence > after_sequence)
+            .order_by(RunEventORM.sequence.asc())
+        )
+        return list(session.scalars(statement).all())
     finally:
         session.close()

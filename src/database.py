@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from src.config import settings
 
@@ -15,15 +16,15 @@ class Base(DeclarativeBase):
 
 
 # 延迟初始化
-_engine = None
-_SessionLocal = None
+_engine: Engine | None = None
+_SessionLocal: sessionmaker[Session] | None = None
 
 
-def get_engine():
+def get_engine() -> Engine:
     """获取数据库引擎 (延迟初始化)"""
     global _engine
     if _engine is None:
-        connect_args = {}
+        connect_args: dict[str, bool] = {}
         if settings.DATABASE_URL.startswith("sqlite"):
             connect_args["check_same_thread"] = False
         _engine = create_engine(
@@ -34,7 +35,7 @@ def get_engine():
     return _engine
 
 
-def get_session():
+def get_session() -> Session:
     """获取数据库会话"""
     global _SessionLocal
     if _SessionLocal is None:
@@ -43,7 +44,7 @@ def get_session():
     return _SessionLocal()
 
 
-def init_db():
+def init_db() -> None:
     """初始化数据库 (创建所有表)"""
     settings.ensure_dirs()
     from src.models import (  # noqa: F401 — 确保所有模型已注册
@@ -59,12 +60,18 @@ def init_db():
     Base.metadata.create_all(bind=engine)
 
 
-def close_db():
+def ping_db() -> None:
+    """Raise when the configured database is not ready."""
+    with get_engine().connect() as connection:
+        connection.execute(text("SELECT 1"))
+
+
+def close_db() -> None:
     """关闭所有数据库连接"""
     global _engine, _SessionLocal
-    if _SessionLocal:
+    if _SessionLocal is not None:
         _SessionLocal.close_all()
         _SessionLocal = None
-    if _engine:
+    if _engine is not None:
         _engine.dispose()
         _engine = None

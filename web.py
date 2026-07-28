@@ -23,7 +23,9 @@ from src.repository import (
     get_sources,
     list_runs,
     save_human_decision,
+    update_run_status,
 )
+from src.services.run_persistence import persist_graph_update, persist_terminal_state
 from src.state import create_initial_state
 
 # ── 人类可读的阶段名称 ──
@@ -350,7 +352,7 @@ def _run_graph(session: dict, resume: dict | None = None):
     if resume:
         from langgraph.types import Command
 
-        events = list(graph.stream(Command(resume=resume), config=config, stream_mode="updates"))
+        events = graph.stream(Command(resume=resume), config=config, stream_mode="updates")
     else:
         state = create_initial_state(
             topic=session["topic"],
@@ -359,7 +361,7 @@ def _run_graph(session: dict, resume: dict | None = None):
             requirements=session["requirements"],
             require_human_approval=session["require_human_approval"],
         )
-        events = list(graph.stream(state, config=config, stream_mode="updates"))
+        events = graph.stream(state, config=config, stream_mode="updates")
 
     for event in events:
         for node, upd in event.items():
@@ -371,6 +373,11 @@ def _run_graph(session: dict, resume: dict | None = None):
 
                 session["status"] = "waiting_human"
                 session["draft"] = draft
+                update_run_status(
+                    session["run_id"],
+                    "waiting_human",
+                    current_node="human_review",
+                )
                 logs += "⏸️  等待人工审批...\n"
 
                 rev_md = "### 审查评分\n"
@@ -398,6 +405,7 @@ def _run_graph(session: dict, resume: dict | None = None):
                 return  # 暂停
 
             # ── 普通节点 ──
+            persist_graph_update(session["run_id"], node, upd)
             status = upd.get("status", "")
             label = STAGE_LABELS.get(node, node)
 
@@ -439,6 +447,9 @@ def _run_graph(session: dict, resume: dict | None = None):
     gs = graph.get_state(config)
     report = gs.values.get("final_report", "")
     status = gs.values.get("status", "completed")
+    if status not in {"completed", "failed", "cancelled"}:
+        status = "completed" if report else "failed"
+    persist_terminal_state(session["run_id"], dict(gs.values), status)
     session["status"] = status
     logs += "\n✅ 研究完成！" if report else "\n⚠️ 未生成报告"
     sources_md = _load_sources_md(session["run_id"])

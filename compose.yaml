@@ -4,6 +4,7 @@ x-app-environment: &app-environment
   CREWFLOW_DATABASE_URL: postgresql+psycopg://crewflow:crewflow@db:5432/crewflow
   CREWFLOW_OUTPUT_DIR: /app/output
   CREWFLOW_ARTIFACTS_DIR: /app/data/artifacts
+  CREWFLOW_CHECKPOINT_DB: /app/data/checkpoints/crewflow.sqlite
 
 services:
   api:
@@ -15,6 +16,7 @@ services:
     volumes:
       - crewflow_output:/app/output
       - crewflow_artifacts:/app/data/artifacts
+      - crewflow_checkpoints:/app/data/checkpoints
     depends_on:
       db:
         condition: service_healthy
@@ -47,6 +49,7 @@ services:
     volumes:
       - crewflow_output:/app/output
       - crewflow_artifacts:/app/data/artifacts
+      - crewflow_checkpoints:/app/data/checkpoints
     depends_on:
       api:
         condition: service_started
@@ -58,3 +61,4 @@ volumes:
   pgdata:
   crewflow_output:
   crewflow_artifacts:
+  crewflow_checkpoints:

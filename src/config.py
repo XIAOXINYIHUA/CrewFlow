@@ -48,6 +48,11 @@ class Settings:
     ARTIFACTS_DIR: Path = _resolve_path(
         os.getenv("CREWFLOW_ARTIFACTS_DIR"), BASE_DIR / "data" / "artifacts", base=BASE_DIR
     )
+    CHECKPOINT_DB: Path = _resolve_path(
+        os.getenv("CREWFLOW_CHECKPOINT_DB"),
+        BASE_DIR / "data" / "checkpoints" / "crewflow.sqlite",
+        base=BASE_DIR,
+    )
 
     # ── 运行时限制 ──
     MAX_ITERATIONS: int = int(os.getenv("CREWFLOW_MAX_ITERATIONS", "3"))
@@ -79,6 +84,7 @@ class Settings:
         """确保输出和缓存目录存在"""
         self.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         self.ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+        self.CHECKPOINT_DB.parent.mkdir(parents=True, exist_ok=True)
 
 
 settings = Settings()

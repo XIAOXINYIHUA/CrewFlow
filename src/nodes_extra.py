@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import cast
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
@@ -27,7 +28,7 @@ from src.state import CrewState
 # ═══════════════════════════════════════════
 
 
-def planner_node(state: CrewState) -> dict:
+def planner_node(state: CrewState) -> dict[str, object]:
     """研究规划节点：输出结构化 ResearchPlan"""
     print("  [Planner] 正在制定研究计划...")
     record = NodeExecutionRecord(
@@ -53,7 +54,7 @@ def planner_node(state: CrewState) -> dict:
     ]
 
     try:
-        plan: ResearchPlan = structured.invoke(msgs)
+        plan = cast(ResearchPlan, structured.invoke(msgs))
         plan.questions = plan.questions[:6]
         max_q = min(req.max_queries, 12)
         seen = {q.id for q in plan.questions}
@@ -123,7 +124,7 @@ class ReportOutline(BaseModel):
     estimated_total_words: int = Field(0, ge=0)
 
 
-def outline_builder_node(state: CrewState) -> dict:
+def outline_builder_node(state: CrewState) -> dict[str, object]:
     """大纲生成节点：写作前生成结构化大纲"""
     print("  [OutlineBuilder] 正在生成大纲...")
     record = NodeExecutionRecord(node_name="outline_builder", started_at=datetime.now())
@@ -147,7 +148,7 @@ def outline_builder_node(state: CrewState) -> dict:
     ]
 
     try:
-        outline: ReportOutline = llm.invoke(msgs)
+        outline = cast(ReportOutline, llm.invoke(msgs))
         print(
             f"  [OutlineBuilder] {len(outline.sections)} 节, 约 {outline.estimated_total_words} 字"
         )
@@ -166,7 +167,7 @@ def outline_builder_node(state: CrewState) -> dict:
 # ═══════════════════════════════════════════
 
 
-def coverage_checker_node(state: CrewState) -> dict:
+def coverage_checker_node(state: CrewState) -> dict[str, object]:
     """检查每个 ResearchQuestion 是否有足够的 Source 和 Claim 覆盖"""
     print("  [CoverageChecker] 正在检查覆盖度...")
     record = NodeExecutionRecord(node_name="coverage_checker", started_at=datetime.now())

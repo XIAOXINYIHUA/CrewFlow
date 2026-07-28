@@ -86,7 +86,7 @@ class NodeLogger:
             },
         )
 
-    def complete(self, **meta) -> None:
+    def complete(self, **meta: object) -> None:
         self.logger.info(
             "节点完成",
             extra={
@@ -97,7 +97,7 @@ class NodeLogger:
             },
         )
 
-    def error(self, error_type: str, message: str, **meta) -> None:
+    def error(self, error_type: str, message: str, **meta: object) -> None:
         self.logger.error(
             message,
             extra={

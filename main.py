@@ -11,7 +11,7 @@ from src.state import create_initial_state
 def main():
     """CLI 模式运行 CrewFlow"""
     print("=" * 60)
-    print("  CrewFlow v0.2 - Multi-Agent 协作研究系统")
+    print("  CrewFlow v0.3 - Multi-Agent 协作研究系统")
     print("    Validate → Researcher → Analyst → Writer → Reviewer")
     print("    → Publisher / Human Review")
     print("=" * 60)
