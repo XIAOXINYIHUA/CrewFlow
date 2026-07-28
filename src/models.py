@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from enum import Enum
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, HttpUrl, field_validator
-
+from pydantic import BaseModel, Field, field_validator
 
 # ═══════════════════════════════════════════
 # 枚举和字面量类型
@@ -84,6 +82,7 @@ NodeName = Literal[
 # 字符串 ID 生成
 # ═══════════════════════════════════════════
 
+
 def new_id(prefix: str = "") -> str:
     return f"{prefix}{uuid4().hex[:12]}"
 
@@ -92,8 +91,10 @@ def new_id(prefix: str = "") -> str:
 # 研究要求 (用户输入)
 # ═══════════════════════════════════════════
 
+
 class ResearchRequirements(BaseModel):
     """用户输入的研究要求"""
+
     topic: str = Field(..., min_length=1, max_length=500, description="研究课题")
     purpose: str | None = Field(None, max_length=1000, description="研究目的")
     audience: str = Field("general", description="目标读者")
@@ -120,12 +121,17 @@ class ResearchRequirements(BaseModel):
     @field_validator("preferred_domains", "excluded_domains")
     @classmethod
     def normalize_domains(cls, v: list[str]) -> list[str]:
-        return [d.strip().lower().removeprefix("http://").removeprefix("https://").split("/")[0] for d in v if d.strip()]
+        return [
+            d.strip().lower().removeprefix("http://").removeprefix("https://").split("/")[0]
+            for d in v
+            if d.strip()
+        ]
 
 
 # ═══════════════════════════════════════════
 # 研究计划
 # ═══════════════════════════════════════════
+
 
 class ResearchQuestion(BaseModel):
     id: str = Field(default_factory=lambda: new_id("q_"))
@@ -144,6 +150,7 @@ class SearchQuery(BaseModel):
 
 class ResearchPlan(BaseModel):
     """研究计划 — 由 Planner 节点生成"""
+
     thesis: str = Field(..., description="核心论点")
     questions: list[ResearchQuestion] = Field(default_factory=list, description="子问题列表")
     queries: list[SearchQuery] = Field(default_factory=list, description="搜索查询列表")
@@ -155,8 +162,10 @@ class ResearchPlan(BaseModel):
 # 搜索结果
 # ═══════════════════════════════════════════
 
+
 class SearchResult(BaseModel):
     """单个搜索结果项"""
+
     id: str = Field(default_factory=lambda: new_id("sr_"))
     query_id: str = Field("", description="关联的搜索查询 ID")
     url: str = Field(..., description="URL")
@@ -172,8 +181,10 @@ class SearchResult(BaseModel):
 # 来源
 # ═══════════════════════════════════════════
 
+
 class Source(BaseModel):
     """经过处理的来源"""
+
     id: str = Field(default_factory=lambda: new_id("S"))
     canonical_url: str = Field(..., description="规范化后的 URL")
     title: str = Field("", description="标题")
@@ -194,8 +205,10 @@ class Source(BaseModel):
 # 证据和结论
 # ═══════════════════════════════════════════
 
+
 class Evidence(BaseModel):
     """从来源提取的证据片段"""
+
     source_id: str = Field(..., description="来源 ID")
     quote: str = Field(..., description="原始引用文本")
     location: str | None = Field(None, description="在来源中的位置")
@@ -205,6 +218,7 @@ class Evidence(BaseModel):
 
 class Claim(BaseModel):
     """研究结论 — 由证据支持的观点"""
+
     id: str = Field(default_factory=lambda: new_id("C"))
     text: str = Field(..., description="结论描述")
     question_id: str = Field("", description="关联的子问题 ID")
@@ -217,8 +231,10 @@ class Claim(BaseModel):
 # 审查
 # ═══════════════════════════════════════════
 
+
 class ReviewIssue(BaseModel):
     """单个审查问题"""
+
     category: ReviewCategory = Field(...)
     severity: ReviewSeverity = Field(...)
     description: str = Field(..., description="问题描述")
@@ -229,6 +245,7 @@ class ReviewIssue(BaseModel):
 
 class ReviewResult(BaseModel):
     """审查结果 — 结构化输出, 不从字符串解析"""
+
     verdict: Literal["approved", "revise", "human_review"] = Field(...)
     factuality_score: int = Field(..., ge=0, le=100)
     citation_score: int = Field(..., ge=0, le=100)
@@ -242,8 +259,10 @@ class ReviewResult(BaseModel):
 # 报告版本
 # ═══════════════════════════════════════════
 
+
 class ReportVersion(BaseModel):
     """报告的单个版本 — 每次修改产生新版本, 不覆盖"""
+
     id: str = Field(default_factory=lambda: new_id("R"))
     run_id: str = Field(..., description="关联的运行 ID")
     version: int = Field(1, ge=1, description="版本号")
@@ -259,8 +278,10 @@ class ReportVersion(BaseModel):
 # 人工决策
 # ═══════════════════════════════════════════
 
+
 class HumanDecision(BaseModel):
     """人类的审批决策"""
+
     action: HumanAction = Field(...)
     feedback: str = Field("", description="人工反馈/修改意见")
     decided_at: datetime = Field(default_factory=datetime.now)
@@ -270,8 +291,10 @@ class HumanDecision(BaseModel):
 # 节点执行记录
 # ═══════════════════════════════════════════
 
+
 class NodeExecutionRecord(BaseModel):
     """每个节点执行的跟踪记录"""
+
     node_name: NodeName = Field(...)
     started_at: datetime = Field(default_factory=datetime.now)
     ended_at: datetime | None = Field(None)

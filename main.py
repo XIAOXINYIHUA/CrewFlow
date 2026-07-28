@@ -3,13 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-from dotenv import load_dotenv
 
 from src.graph import build_graph
 from src.state import create_initial_state
-
-load_dotenv()
 
 
 def main():
@@ -98,6 +94,7 @@ def main():
     except Exception as e:
         print(f"\n❌ 发生错误: {e}")
         import traceback
+
         traceback.print_exc()
 
 

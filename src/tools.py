@@ -5,22 +5,26 @@
 
 from __future__ import annotations
 
-import os
-from datetime import datetime, date
-from pathlib import Path
+from datetime import datetime
 
 from src.config import settings
-
 
 # ═══════════════════════════════════════════
 # 搜索结果模型 (类型提示用, 运行时由 models 提供)
 # ═══════════════════════════════════════════
 
+
 class SearchResult:
     """轻量搜索结果 (正式实现见 models.SearchResult)"""
-    def __init__(self, url: str, title: str, snippet: str,
-                 publisher: str | None = None,
-                 author: str | None = None):
+
+    def __init__(
+        self,
+        url: str,
+        title: str,
+        snippet: str,
+        publisher: str | None = None,
+        author: str | None = None,
+    ):
         self.url = url
         self.title = title
         self.snippet = snippet
@@ -31,6 +35,7 @@ class SearchResult:
 # ═══════════════════════════════════════════
 # 搜索 (模拟)
 # ═══════════════════════════════════════════
+
 
 def web_search(query: str) -> str:
     """模拟搜索工具
@@ -57,6 +62,7 @@ def web_search(query: str) -> str:
 # 来源抓取
 # ═══════════════════════════════════════════
 
+
 def fetch_webpage(url: str, timeout: int = 15) -> dict:
     """抓取网页正文
 
@@ -81,6 +87,7 @@ def fetch_webpage(url: str, timeout: int = 15) -> dict:
 # ═══════════════════════════════════════════
 # 报告保存
 # ═══════════════════════════════════════════
+
 
 def save_report(content: str, topic: str) -> str:
     """将报告保存到配置化的 output/ 目录

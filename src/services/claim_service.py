@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import List
-
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
 from src.config import settings
 from src.models import Claim, Evidence, Source
 
-
 # ═══════════════════════════════════════════
 # 结构化输出模型 (用于 LLM 提取)
 # ═══════════════════════════════════════════
 
+
 class ExtractedEvidence(BaseModel):
     """从来源提取的单条证据"""
+
     quote: str = Field(..., description="原文引用片段, 精确匹配来源内容")
     supports_claim: bool = Field(True, description="是否支持结论")
     notes: str | None = Field(None, description="提取备注, 如统计口径、时间范围等")
@@ -26,6 +24,7 @@ class ExtractedEvidence(BaseModel):
 
 class ExtractedClaim(BaseModel):
     """从来源提取的单个结论"""
+
     text: str = Field(..., description="结论陈述, 只能基于来源中的事实")
     question_id: str = Field("", description="关联的研究子问题 ID")
     status: str = Field("supported", description="supported / conflicting / unsupported")
@@ -35,6 +34,7 @@ class ExtractedClaim(BaseModel):
 
 class SourceExtraction(BaseModel):
     """从单个来源提取的所有结论"""
+
     source_id: str = Field(..., description="来源 ID")
     source_title: str = Field("", description="来源标题")
     claims: list[ExtractedClaim] = Field(default_factory=list, description="提取的结论列表")
@@ -44,6 +44,7 @@ class SourceExtraction(BaseModel):
 
 class BatchExtractionResult(BaseModel):
     """批量提取结果"""
+
     extractions: list[SourceExtraction] = Field(default_factory=list)
 
 
@@ -54,7 +55,8 @@ class BatchExtractionResult(BaseModel):
 CLAIM_EXTRACTOR_PROMPT_ID = "claim_extractor"
 CLAIM_EXTRACTOR_PROMPT_VERSION = "0.1.0"
 
-CLAIM_EXTRACTOR_PROMPT = """你是一名研究证据提取专家。你的任务是从研究来源中提取结构化的事实结论 (Claim) 和证据 (Evidence)。
+CLAIM_EXTRACTOR_PROMPT = """你是一名研究证据提取专家。
+你的任务是从研究来源中提取结构化的事实结论 (Claim) 和证据 (Evidence)。
 
 研究课题: {topic}
 
@@ -81,6 +83,7 @@ CLAIM_EXTRACTOR_PROMPT = """你是一名研究证据提取专家。你的任务�
 # Claim 提取函数
 # ═══════════════════════════════════════════
 
+
 def extract_claims_from_source(
     source: Source,
     topic: str,
@@ -105,7 +108,7 @@ def extract_claims_from_source(
     # 读取正文
     if content is None and source.content_location:
         try:
-            with open(source.content_location, "r", encoding="utf-8") as f:
+            with open(source.content_location, encoding="utf-8") as f:
                 content = f.read()
         except Exception:
             return []
@@ -126,13 +129,15 @@ def extract_claims_from_source(
     structured = llm.with_structured_output(SourceExtraction)
 
     msgs = [
-        SystemMessage(content=CLAIM_EXTRACTOR_PROMPT.format(
-            topic=topic,
-            url=source.canonical_url or "",
-            title=source.title or "",
-            source_type=source.source_type or "unknown",
-            content=truncated,
-        )),
+        SystemMessage(
+            content=CLAIM_EXTRACTOR_PROMPT.format(
+                topic=topic,
+                url=source.canonical_url or "",
+                title=source.title or "",
+                source_type=source.source_type or "unknown",
+                content=truncated,
+            )
+        ),
         HumanMessage(content="请提取研究结论"),
     ]
 
@@ -187,10 +192,7 @@ def extract_all_claims(
     Returns:
         合并后的去重 Claim 列表
     """
-    successful = [
-        s for s in sources
-        if s.extraction_status == "success" and s.content_location
-    ]
+    successful = [s for s in sources if s.extraction_status == "success" and s.content_location]
 
     all_claims: list[Claim] = []
     seen_texts: set[str] = set()
@@ -207,4 +209,3 @@ def extract_all_claims(
 
     print(f"  [ClaimExtractor] 总计: {len(all_claims)} 条结论 (来自 {len(successful)} 个来源)")
     return all_claims
-

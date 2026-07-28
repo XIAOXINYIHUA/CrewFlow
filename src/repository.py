@@ -4,32 +4,32 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Any
 
 from src.database import get_session
-from src.orm_models import (
-    ResearchRunORM,
-    SourceORM,
-    ClaimORM,
-    EvidenceORM,
-    ReportVersionORM,
-    ReviewORM,
-    HumanDecisionORM,
-    NodeExecutionORM,
-)
 from src.models import (
-    Source,
     Claim,
+    HumanDecision,
+    NodeExecutionRecord,
     ReportVersion,
     ReviewResult,
-    HumanDecision,
+    Source,
     new_id,
 )
-
+from src.orm_models import (
+    ClaimORM,
+    EvidenceORM,
+    HumanDecisionORM,
+    NodeExecutionORM,
+    ReportVersionORM,
+    ResearchRunORM,
+    ReviewORM,
+    SourceORM,
+)
 
 # ═══════════════════════════════════════════
 # 研究运行
 # ═══════════════════════════════════════════
+
 
 def create_run(run_id: str, thread_id: str, topic: str, **kwargs) -> ResearchRunORM:
     """创建新运行记录"""
@@ -99,6 +99,7 @@ def list_runs(limit: int = 20, offset: int = 0) -> list[ResearchRunORM]:
 # 来源
 # ═══════════════════════════════════════════
 
+
 def save_sources(run_id: str, sources: list[Source]) -> int:
     """保存来源列表"""
     session = get_session()
@@ -143,6 +144,7 @@ def get_sources(run_id: str) -> list[SourceORM]:
 # 结论
 # ═══════════════════════════════════════════
 
+
 def save_claims(run_id: str, claims: list[Claim]) -> int:
     """保存结论列表"""
     session = get_session()
@@ -181,6 +183,7 @@ def save_claims(run_id: str, claims: list[Claim]) -> int:
 # 报告版本
 # ═══════════════════════════════════════════
 
+
 def save_report_version(run_id: str, version: ReportVersion) -> None:
     """保存报告版本"""
     session = get_session()
@@ -218,6 +221,7 @@ def get_report_versions(run_id: str) -> list[ReportVersionORM]:
 # 审查
 # ═══════════════════════════════════════════
 
+
 def save_review(run_id: str, iteration: int, review: ReviewResult) -> None:
     """保存审查记录"""
     session = get_session()
@@ -234,7 +238,9 @@ def save_review(run_id: str, iteration: int, review: ReviewResult) -> None:
             issues_json=json.dumps(
                 [i.model_dump() for i in review.issues],
                 ensure_ascii=False,
-            ) if review.issues else None,
+            )
+            if review.issues
+            else None,
             summary=review.summary,
             created_at=datetime.now(),
         )
@@ -264,6 +270,7 @@ def save_human_decision(run_id: str, decision: HumanDecision) -> None:
 # ═══════════════════════════════════════════
 # 节点执行记录
 # ═══════════════════════════════════════════
+
 
 def save_node_execution(run_id: str, record: NodeExecutionRecord) -> None:
     """保存节点执行记录"""

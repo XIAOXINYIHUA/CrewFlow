@@ -1,8 +1,23 @@
 """CrewFlow 配置模块 — 所有配置集中管理"""
 
 import os
-from pathlib import Path
 from decimal import Decimal
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+def _resolve_path(value: str | None, default: Path, *, base: Path | None = None) -> Path:
+    """Resolve an optional environment path consistently across local and container runs."""
+    path = Path(value).expanduser() if value else default
+    if not path.is_absolute():
+        path = (base or Path.cwd()) / path
+    return path.resolve()
+
+
+_BASE_DIR = _resolve_path(os.getenv("CREWFLOW_BASE_DIR"), Path.cwd())
 
 
 class Settings:
@@ -10,9 +25,7 @@ class Settings:
 
     # ── API Keys ──
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_API_BASE: str = os.getenv(
-        "OPENAI_API_BASE", "https://api.openai.com/v1"
-    )
+    OPENAI_API_BASE: str = os.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
     TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
 
     # ── 模型路由 ──
@@ -28,11 +41,13 @@ class Settings:
     REQUEST_TIMEOUT: int = int(os.getenv("CREWFLOW_REQUEST_TIMEOUT", "60"))
 
     # ── 路径 ──
-    BASE_DIR: Path = Path(
-        os.getenv("CREWFLOW_BASE_DIR", str(Path.cwd()))
+    BASE_DIR: Path = _BASE_DIR
+    OUTPUT_DIR: Path = _resolve_path(
+        os.getenv("CREWFLOW_OUTPUT_DIR"), BASE_DIR / "output", base=BASE_DIR
     )
-    OUTPUT_DIR: Path = BASE_DIR / "output"
-    ARTIFACTS_DIR: Path = BASE_DIR / "data" / "artifacts"
+    ARTIFACTS_DIR: Path = _resolve_path(
+        os.getenv("CREWFLOW_ARTIFACTS_DIR"), BASE_DIR / "data" / "artifacts", base=BASE_DIR
+    )
 
     # ── 运行时限制 ──
     MAX_ITERATIONS: int = int(os.getenv("CREWFLOW_MAX_ITERATIONS", "3"))
@@ -53,6 +68,12 @@ class Settings:
     # ── 默认值 ──
     DEFAULT_LANGUAGE: str = os.getenv("CREWFLOW_DEFAULT_LANGUAGE", "zh-CN")
     DEFAULT_TARGET_WORDS: int = int(os.getenv("CREWFLOW_TARGET_WORDS", "2500"))
+
+    # ── 服务 ──
+    HOST: str = os.getenv("CREWFLOW_HOST", "0.0.0.0")
+    PORT: int = int(os.getenv("CREWFLOW_PORT", "8000"))
+    WEB_HOST: str = os.getenv("CREWFLOW_WEB_HOST", "0.0.0.0")
+    WEB_PORT: int = int(os.getenv("CREWFLOW_WEB_PORT", "7860"))
 
     def ensure_dirs(self) -> None:
         """确保输出和缓存目录存在"""

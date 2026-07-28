@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from src.config import settings
 
 
 class Base(DeclarativeBase):
     """SQLAlchemy 声明基类"""
+
     pass
 
 
@@ -44,9 +45,14 @@ def get_session():
 
 def init_db():
     """初始化数据库 (创建所有表)"""
+    settings.ensure_dirs()
     from src.models import (  # noqa: F401 — 确保所有模型已注册
-        Source, Claim, Evidence, ReportVersion,
-        HumanDecision, NodeExecutionRecord,
+        Claim,
+        Evidence,
+        HumanDecision,
+        NodeExecutionRecord,
+        ReportVersion,
+        Source,
     )
 
     engine = get_engine()

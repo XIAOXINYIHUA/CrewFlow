@@ -5,16 +5,14 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import datetime
-from pathlib import Path
 from urllib.parse import urlparse
 
-from src.config import settings
-from src.models import Source, SourceType, SearchResult
-
+from src.models import SearchResult, Source, SourceType
 
 # ═══════════════════════════════════════════
 # URL 规范化
 # ═══════════════════════════════════════════
+
 
 def normalize_url(url: str) -> str:
     """规范化 URL
@@ -80,14 +78,37 @@ def url_to_source_type(url: str) -> SourceType:
         return "standard"
 
     # 论坛/社区 (排在新闻/公司前, 避免误判)
-    if any(d in domain for d in ["reddit", "stackoverflow", "github", "medium", "zhihu", "discourse", "stackexchange"]):
+    if any(
+        d in domain
+        for d in [
+            "reddit",
+            "stackoverflow",
+            "github",
+            "medium",
+            "zhihu",
+            "discourse",
+            "stackexchange",
+        ]
+    ):
         return "forum"
 
     # 新闻媒体
-    if any(d in domain for d in [
-        "news", "reuters", "bloomberg", "bbc", "cnn", "nytimes",
-        "wsj", "ft.com", "economist", "ap.org", "xinhua",
-    ]):
+    if any(
+        d in domain
+        for d in [
+            "news",
+            "reuters",
+            "bloomberg",
+            "bbc",
+            "cnn",
+            "nytimes",
+            "wsj",
+            "ft.com",
+            "economist",
+            "ap.org",
+            "xinhua",
+        ]
+    ):
         return "news"
 
     # 公司/产品
@@ -158,6 +179,7 @@ def is_safe_url(url: str) -> tuple[bool, str]:
 # ═══════════════════════════════════════════
 # 网页抓取
 # ═══════════════════════════════════════════
+
 
 def fetch_webpage(url: str, timeout: int = 15) -> dict:
     """抓取网页正文内容
@@ -240,6 +262,7 @@ def fetch_webpage(url: str, timeout: int = 15) -> dict:
 # 内容哈希
 # ═══════════════════════════════════════════
 
+
 def content_hash(text: str) -> str:
     """计算内容 SHA256 哈希"""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
@@ -248,6 +271,7 @@ def content_hash(text: str) -> str:
 # ═══════════════════════════════════════════
 # 来源去重
 # ═══════════════════════════════════════════
+
 
 def deduplicate_sources(
     existing: list[Source],
@@ -320,6 +344,7 @@ def deduplicate_sources(
 # ═══════════════════════════════════════════
 # 可信度评估
 # ═══════════════════════════════════════════
+
 
 def evaluate_credibility(source: Source, content: str) -> tuple[float, list[str]]:
     """基于内容和元数据评估来源可信度

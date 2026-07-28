@@ -2,22 +2,21 @@
 
 from datetime import date
 from decimal import Decimal
+
 import pytest
 from pydantic import ValidationError
 
 from src.models import (
-    ResearchRequirements,
-    ResearchPlan,
-    ResearchQuestion,
-    SearchQuery,
-    SearchResult,
-    Source,
     Claim,
     Evidence,
-    ReviewResult,
-    ReviewIssue,
     HumanDecision,
     ReportVersion,
+    ResearchPlan,
+    ResearchQuestion,
+    ResearchRequirements,
+    ReviewIssue,
+    ReviewResult,
+    SearchQuery,
 )
 
 

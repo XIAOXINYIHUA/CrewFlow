@@ -2,18 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
 from typing import Any
 
 from src.config import settings
 from src.search import (
+    SearchAuthError,
+    SearchProviderError,
+    SearchRateLimitError,
     SearchResultItem,
     SearchTimeoutError,
-    SearchRateLimitError,
-    SearchAuthError,
-    SearchNoResultsError,
-    SearchProviderError,
     classify_search_error,
 )
 
@@ -116,15 +114,9 @@ class TavilySearchProvider:
             )
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
-                raise SearchRateLimitError(
-                    "Tavily 限流", provider="tavily", query=query
-                )
-            raise SearchProviderError(
-                f"Tavily HTTP 错误: {e}", provider="tavily", query=query
-            )
+                raise SearchRateLimitError("Tavily 限流", provider="tavily", query=query)
+            raise SearchProviderError(f"Tavily HTTP 错误: {e}", provider="tavily", query=query)
         except (httpx.HTTPError, httpx.ConnectError) as e:
-            raise SearchProviderError(
-                f"Tavily 连接错误: {e}", provider="tavily", query=query
-            )
+            raise SearchProviderError(f"Tavily 连接错误: {e}", provider="tavily", query=query)
         except Exception as e:
             raise classify_search_error(e, query=query)

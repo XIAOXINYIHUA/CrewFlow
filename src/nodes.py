@@ -10,39 +10,31 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
-from decimal import Decimal
-from pathlib import Path
 
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 from langgraph.types import interrupt
 
 from src.config import settings
-from src.state import CrewState
 from src.models import (
-    ResearchRequirements,
-    ResearchPlan,
-    ReviewResult,
-    ReviewIssue,
     HumanDecision,
-    ReportVersion,
     NodeExecutionRecord,
-    new_id,
-    Claim,
-    Evidence,
-    Source,
+    ReportVersion,
+    ResearchRequirements,
+    ReviewIssue,
+    ReviewResult,
     SearchResult,
+    new_id,
 )
 from src.prompts import (
-    RESEARCHER_PROMPT,
     ANALYST_PROMPT,
-    WRITER_PROMPT,
+    RESEARCHER_PROMPT,
     REVIEWER_PROMPT,
+    WRITER_PROMPT,
 )
+from src.state import CrewState
 from src.tools import save_report
-
 
 # ═══════════════════════════════════════════
 # 搜索提供商 (延迟初始化)
@@ -62,22 +54,28 @@ def _get_search_provider():
 
     if settings.TAVILY_API_KEY:
         from src.search.providers import TavilySearchProvider
+
         _search_provider = TavilySearchProvider(api_key=settings.TAVILY_API_KEY)
     else:
         # 模拟搜索 (开发/演示用)
         from src.search import SearchResultItem as MockItem
+
         class MockSearchProvider:
             async def search(self, query, **kwargs):
                 return [
                     MockItem(
                         query=query,
                         url=f"https://example.com/result-{i}",
-                        title=f"关于 '{query[:20]}' 的第 {i+1} 条结果",
-                        snippet=f"这是关于 {query[:20]} 的模拟搜索结果 #{i+1}。生产环境请配置 TAVILY_API_KEY。",
+                        title=f"关于 '{query[:20]}' 的第 {i + 1} 条结果",
+                        snippet=(
+                            f"这是关于 {query[:20]} 的模拟搜索结果 #{i + 1}。"
+                            "生产环境请配置 TAVILY_API_KEY。"
+                        ),
                         publisher="example.com",
                     )
                     for i in range(min(kwargs.get("max_results", 5), 5))
                 ]
+
         _search_provider = MockSearchProvider()
 
     return _search_provider
@@ -86,6 +84,7 @@ def _get_search_provider():
 # ═══════════════════════════════════════════
 # 模型路由
 # ═══════════════════════════════════════════
+
 
 def _get_llm(model: str | None = None, temperature: float = 0.3):
     """获取 LLM 实例"""
@@ -118,6 +117,7 @@ def _start_record(node_name: str) -> NodeExecutionRecord:
 # Validate Input
 # ═══════════════════════════════════════════
 
+
 def validate_input_node(state: CrewState) -> dict:
     """输入校验 — 纯逻辑, 不调用 LLM"""
     print("  [Validate] 校验输入...")
@@ -134,6 +134,7 @@ def validate_input_node(state: CrewState) -> dict:
 # Researcher (使用真实搜索)
 # ═══════════════════════════════════════════
 
+
 async def researcher_node(state: CrewState) -> dict:
     """研究专员：使用 SearchProvider 搜集真实信息"""
     print("  [Researcher] 正在搜索信息...")
@@ -144,7 +145,9 @@ async def researcher_node(state: CrewState) -> dict:
 
     # 生成搜索查询
     queries = [topic]
-    queries.extend(state.get("requirements", ResearchRequirements(topic=topic)).preferred_domains[:2])
+    queries.extend(
+        state.get("requirements", ResearchRequirements(topic=topic)).preferred_domains[:2]
+    )
 
     all_results: list[SearchResult] = []
     search_errors: list[str] = []
@@ -154,18 +157,23 @@ async def researcher_node(state: CrewState) -> dict:
             items = await provider.search(
                 query,
                 max_results=5,
-                domains=state.get("requirements", ResearchRequirements(topic=topic)).preferred_domains or None,
+                domains=state.get(
+                    "requirements", ResearchRequirements(topic=topic)
+                ).preferred_domains
+                or None,
             )
             for item in items:
-                all_results.append(SearchResult(
-                    url=item.url,
-                    title=item.title,
-                    snippet=item.snippet,
-                    publisher=item.publisher,
-                    author=item.author,
-                    published_at=item.published_at,
-                    retrieved_at=item.retrieved_at,
-                ))
+                all_results.append(
+                    SearchResult(
+                        url=item.url,
+                        title=item.title,
+                        snippet=item.snippet,
+                        publisher=item.publisher,
+                        author=item.author,
+                        published_at=item.published_at,
+                        retrieved_at=item.retrieved_at,
+                    )
+                )
             print(f"  [Researcher] 查询 '{query[:40]}' → {len(items)} 条结果")
         except Exception as e:
             err_msg = f"搜索查询失败 '{query[:40]}': {type(e).__name__}: {e}"
@@ -174,17 +182,21 @@ async def researcher_node(state: CrewState) -> dict:
 
     # 用 LLM 整理搜索结果
     llm = _get_llm(temperature=0.3)
-    formatted_results = "\n\n".join(
-        f"标题: {r.title}\n来源: {r.url}\n摘要: {r.snippet}\n"
-        for r in all_results[:10]
-    ) or "搜索无结果"
+    formatted_results = (
+        "\n\n".join(
+            f"标题: {r.title}\n来源: {r.url}\n摘要: {r.snippet}\n" for r in all_results[:10]
+        )
+        or "搜索无结果"
+    )
 
     msgs = [
-        SystemMessage(content=RESEARCHER_PROMPT.format(
-            topic=topic,
-            search_results=formatted_results,
-            language="zh-CN",
-        )),
+        SystemMessage(
+            content=RESEARCHER_PROMPT.format(
+                topic=topic,
+                search_results=formatted_results,
+                language="zh-CN",
+            )
+        ),
         HumanMessage(content="请开始搜集信息"),
     ]
 
@@ -218,17 +230,17 @@ async def researcher_node(state: CrewState) -> dict:
 # Source Processor (来源抓取 + 处理)
 # ═══════════════════════════════════════════
 
+
 def source_processor_node(state: CrewState) -> dict:
     """来源处理器：抓取正文、去重、可信度评估、保存快照"""
     print("  [SourceProcessor] 正在处理来源...")
     record = _start_record("source_processor")
 
     from src.services.source_service import (
-        normalize_url,
-        fetch_webpage,
         content_hash,
         deduplicate_sources,
         evaluate_credibility,
+        fetch_webpage,
         url_to_source_type,
     )
 
@@ -245,8 +257,12 @@ def source_processor_node(state: CrewState) -> dict:
     # 去重
     result_items = [
         SearchResult(
-            url=r.url, title=r.title, snippet=r.snippet,
-            publisher=r.publisher, author=r.author, published_at=r.published_at,
+            url=r.url,
+            title=r.title,
+            snippet=r.snippet,
+            publisher=r.publisher,
+            author=r.author,
+            published_at=r.published_at,
         )
         for r in search_results
     ]
@@ -310,6 +326,7 @@ def source_processor_node(state: CrewState) -> dict:
 # Analyst
 # ═══════════════════════════════════════════
 
+
 def analyst_node(state: CrewState) -> dict:
     """分析师：基于搜集的信息分析"""
     print("  [Analyst] 正在分析信息...")
@@ -317,10 +334,12 @@ def analyst_node(state: CrewState) -> dict:
 
     llm = _get_llm(temperature=0.4)
     msgs = [
-        SystemMessage(content=ANALYST_PROMPT.format(
-            search_results=state.get("draft", "无研究资料"),
-            language="zh-CN",
-        )),
+        SystemMessage(
+            content=ANALYST_PROMPT.format(
+                search_results=state.get("draft", "无研究资料"),
+                language="zh-CN",
+            )
+        ),
         HumanMessage(content="请开始分析"),
     ]
 
@@ -349,6 +368,7 @@ def analyst_node(state: CrewState) -> dict:
 # Writer
 # ═══════════════════════════════════════════
 
+
 def writer_node(state: CrewState) -> dict:
     """撰稿人：撰写/修改报告"""
     print("  [Writer] 正在撰写报告...")
@@ -357,8 +377,7 @@ def writer_node(state: CrewState) -> dict:
     feedback_section = ""
     if state.get("review") and state["review"].issues:
         issues_str = "\n".join(
-            f"- [{i.severity}] {i.category}: {i.description}"
-            for i in state["review"].issues
+            f"- [{i.severity}] {i.category}: {i.description}" for i in state["review"].issues
         )
         feedback_section = f"审查反馈 (请据此修改):\n{issues_str}"
 
@@ -371,14 +390,16 @@ def writer_node(state: CrewState) -> dict:
 
     llm = _get_llm(model=settings.WRITER_MODEL, temperature=0.5)
     msgs = [
-        SystemMessage(content=WRITER_PROMPT.format(
-            claims=sources_str,
-            analysis=state.get("draft", state.get("analysis", "")),
-            outline="",
-            feedback_section=feedback_section,
-            language="zh-CN",
-            target_words=2500,
-        )),
+        SystemMessage(
+            content=WRITER_PROMPT.format(
+                claims=sources_str,
+                analysis=state.get("draft", state.get("analysis", "")),
+                outline="",
+                feedback_section=feedback_section,
+                language="zh-CN",
+                target_words=2500,
+            )
+        ),
         HumanMessage(content="请开始撰写"),
     ]
 
@@ -420,6 +441,7 @@ def writer_node(state: CrewState) -> dict:
 # Reviewer (结构化输出)
 # ═══════════════════════════════════════════
 
+
 def reviewer_node(state: CrewState) -> dict:
     """审查员：结构化质量审查"""
     print("  [Reviewer] 正在审查报告...")
@@ -430,22 +452,27 @@ def reviewer_node(state: CrewState) -> dict:
         return {
             "review": ReviewResult(
                 verdict="human_review",
-                factuality_score=0, citation_score=0,
-                coverage_score=0, structure_score=0,
-                issues=[ReviewIssue(
-                    category="structure", severity="critical",
-                    description="报告草稿为空",
-                    suggestion="请重新生成报告",
-                )],
+                factuality_score=0,
+                citation_score=0,
+                coverage_score=0,
+                structure_score=0,
+                issues=[
+                    ReviewIssue(
+                        category="structure",
+                        severity="critical",
+                        description="报告草稿为空",
+                        suggestion="请重新生成报告",
+                    )
+                ],
             ),
             "current_node": "reviewer",
             "updated_at": datetime.now(),
             "node_executions": [record],
         }
 
-    structured_reviewer = _structured_llm(
-        model=settings.REVIEWER_MODEL
-    ).with_structured_output(ReviewResult)
+    structured_reviewer = _structured_llm(model=settings.REVIEWER_MODEL).with_structured_output(
+        ReviewResult
+    )
 
     msgs = [
         SystemMessage(content=REVIEWER_PROMPT.format(draft=draft)),
@@ -459,10 +486,18 @@ def reviewer_node(state: CrewState) -> dict:
 
         iteration = state.get("iteration", 0) + 1
         print(f"  [Reviewer] 裁定: {review.verdict} (第{iteration}轮)")
-        print(f"    事实:{review.factuality_score} 引用:{review.citation_score} 覆盖:{review.coverage_score} 结构:{review.structure_score}")
+        print(
+            f"    事实:{review.factuality_score} 引用:{review.citation_score} "
+            f"覆盖:{review.coverage_score} 结构:{review.structure_score}"
+        )
 
-        quality_status = "passed" if review.verdict == "approved" else \
-                        "needs_human_review" if review.verdict == "human_review" else "failed"
+        quality_status = (
+            "passed"
+            if review.verdict == "approved"
+            else "needs_human_review"
+            if review.verdict == "human_review"
+            else "failed"
+        )
 
         return {
             "review": review,
@@ -480,13 +515,18 @@ def reviewer_node(state: CrewState) -> dict:
             "errors": [f"Reviewer 失败: {e}"],
             "review": ReviewResult(
                 verdict="human_review",
-                factuality_score=0, citation_score=0,
-                coverage_score=0, structure_score=0,
-                issues=[ReviewIssue(
-                    category="factuality", severity="critical",
-                    description=f"审查引擎错误: {e}",
-                    suggestion="请人工判断",
-                )],
+                factuality_score=0,
+                citation_score=0,
+                coverage_score=0,
+                structure_score=0,
+                issues=[
+                    ReviewIssue(
+                        category="factuality",
+                        severity="critical",
+                        description=f"审查引擎错误: {e}",
+                        suggestion="请人工判断",
+                    )
+                ],
             ),
             "quality_status": "needs_human_review",
             "current_node": "reviewer",
@@ -497,6 +537,7 @@ def reviewer_node(state: CrewState) -> dict:
 # ═══════════════════════════════════════════
 # Publisher
 # ═══════════════════════════════════════════
+
 
 def publisher_node(state: CrewState) -> dict:
     """发布员：固化最终版本并导出"""
@@ -548,6 +589,7 @@ def publisher_node(state: CrewState) -> dict:
 # Human Review
 # ═══════════════════════════════════════════
 
+
 def human_review_node(state: CrewState) -> dict:
     """人工审查节点 — 使用 interrupt() 暂停"""
     print("  [HumanReview] 等待人工审批...")
@@ -565,7 +607,9 @@ def human_review_node(state: CrewState) -> dict:
             "citation": review.citation_score if review else 0,
             "coverage": review.coverage_score if review else 0,
             "structure": review.structure_score if review else 0,
-        } if review else {},
+        }
+        if review
+        else {},
         "issues": [i.model_dump() for i in review.issues] if review and review.issues else [],
         "allowed_actions": ["approve", "revise", "cancel"],
     }
@@ -599,6 +643,7 @@ def human_review_node(state: CrewState) -> dict:
 # Claim Builder (从来源提取结构化结论)
 # ═══════════════════════════════════════════
 
+
 def claim_builder_node(state: CrewState) -> dict:
     """结论提取节点：从来源正文中提取结构化 Claim 和 Evidence
 
@@ -629,6 +674,7 @@ def claim_builder_node(state: CrewState) -> dict:
 
         # Also detect conflicts
         from src.services.citation_service import detect_conflicting_claims
+
         conflicts = detect_conflicting_claims(claims)
         if conflicts:
             print(f"  [ClaimBuilder] 检测到 {len(conflicts)} 组来源冲突")
@@ -656,6 +702,7 @@ def claim_builder_node(state: CrewState) -> dict:
 # ═══════════════════════════════════════════
 # Citation Checker (确定性检查, 不调用 LLM)
 # ═══════════════════════════════════════════
+
 
 def citation_checker_node(state: CrewState) -> dict:
     """引用检查器：检查引用有效性和覆盖度
@@ -687,7 +734,10 @@ def citation_checker_node(state: CrewState) -> dict:
         # 引用有效性
         citation_report = check_citations(draft, sources)
         print(f"  [CitationChecker] 引用覆盖: {citation_report.coverage_rate:.0%}")
-        print(f"    有效: {len(citation_report.valid_citations)}, 无效: {len(citation_report.invalid_citations)}")
+        print(
+            f"    有效: {len(citation_report.valid_citations)}, "
+            f"无效: {len(citation_report.invalid_citations)}"
+        )
 
         # 无来源断言
         uncited = find_uncited_assertions(draft)
@@ -697,20 +747,24 @@ def citation_checker_node(state: CrewState) -> dict:
         # 生成检查问题
         issues: list[ReviewIssue] = []
         for invalid in citation_report.invalid_citations:
-            issues.append(ReviewIssue(
-                category="citation",
-                severity="critical",
-                description=f"引用 [S{invalid.source_id}] 指向不存在的来源",
-                suggestion="请修正为实际存在的 Source ID",
-            ))
+            issues.append(
+                ReviewIssue(
+                    category="citation",
+                    severity="critical",
+                    description=f"引用 [S{invalid.source_id}] 指向不存在的来源",
+                    suggestion="请修正为实际存在的 Source ID",
+                )
+            )
 
         if citation_report.coverage_rate < 0.5 and citation_report.valid_citations:
-            issues.append(ReviewIssue(
-                category="citation",
-                severity="high",
-                description=f"引用覆盖率仅 {citation_report.coverage_rate:.0%}",
-                suggestion="请确保每个关键断言都有来源支持",
-            ))
+            issues.append(
+                ReviewIssue(
+                    category="citation",
+                    severity="high",
+                    description=f"引用覆盖率仅 {citation_report.coverage_rate:.0%}",
+                    suggestion="请确保每个关键断言都有来源支持",
+                )
+            )
 
         record.status = "completed"
         record.ended_at = datetime.now()
@@ -730,4 +784,3 @@ def citation_checker_node(state: CrewState) -> dict:
             "current_node": "citation_checker",
             "node_executions": [record],
         }
-

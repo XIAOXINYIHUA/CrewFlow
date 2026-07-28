@@ -5,34 +5,27 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from collections.abc import AsyncGenerator
 from datetime import datetime
-from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import StreamingResponse, PlainTextResponse
-from pydantic import BaseModel, Field, field_validator
+from fastapi.responses import PlainTextResponse, StreamingResponse
+from pydantic import BaseModel, Field
 
-from dotenv import load_dotenv
-
-from src.graph import build_graph
-from src.state import create_initial_state
-from src.models import HumanDecision, new_id
 from src.config import settings
 from src.database import init_db
+from src.graph import build_graph
+from src.models import HumanDecision
 from src.repository import (
     create_run,
-    get_run,
-    update_run_status,
-    list_runs,
-    save_review,
-    save_human_decision,
     get_report_versions,
-    save_report_version,
-    save_sources,
+    get_run,
     get_sources,
+    list_runs,
+    save_human_decision,
+    update_run_status,
 )
-
-load_dotenv()
+from src.state import create_initial_state
 
 app = FastAPI(title="CrewFlow API", version="0.2.0")
 
@@ -40,6 +33,7 @@ app = FastAPI(title="CrewFlow API", version="0.2.0")
 # ═══════════════════════════════════════════
 # 标准响应模型
 # ═══════════════════════════════════════════
+
 
 class ErrorResponse(BaseModel):
     error: str
@@ -57,6 +51,7 @@ class PaginationMeta(BaseModel):
 # ═══════════════════════════════════════════
 # 请求模型
 # ═══════════════════════════════════════════
+
 
 class CreateRunRequest(BaseModel):
     topic: str = Field(..., min_length=1, max_length=500)
@@ -84,6 +79,7 @@ class SourceFilterRequest(BaseModel):
 # ═══════════════════════════════════════════
 # 响应模型
 # ═══════════════════════════════════════════
+
 
 class CreateRunResponse(BaseModel):
     run_id: str
@@ -134,6 +130,7 @@ class ReportVersionResponse(BaseModel):
 # SSE 事件流 (支持断线重连 last-event-id)
 # ═══════════════════════════════════════════
 
+
 async def event_stream(
     run_id: str,
     thread_id: str,
@@ -160,10 +157,12 @@ async def event_stream(
             for node_name, update in event.items():
                 if node_name == "__interrupt__":
                     update_run_status(run_id, "waiting_human", current_node="human_review")
-                    yield (
-                        f"id: {event_id}\n"
-                        f"data: {json.dumps({'type': 'interrupt', 'node': 'human_review', 'run_id': run_id})}\n\n"
-                    )
+                    payload = {
+                        "type": "interrupt",
+                        "node": "human_review",
+                        "run_id": run_id,
+                    }
+                    yield f"id: {event_id}\ndata: {json.dumps(payload)}\n\n"
                     continue
 
                 payload: dict = {
@@ -190,7 +189,13 @@ async def event_stream(
         report = final_state.values.get("final_report", "")
         status = final_state.values.get("status", "completed")
         update_run_status(run_id, status)
-        yield f"id: {event_id + 1}\ndata: {json.dumps({'type': 'completed', 'run_id': run_id, 'status': status, 'has_report': bool(report)})}\n\n"
+        payload = {
+            "type": "completed",
+            "run_id": run_id,
+            "status": status,
+            "has_report": bool(report),
+        }
+        yield f"id: {event_id + 1}\ndata: {json.dumps(payload)}\n\n"
 
     except Exception as e:
         update_run_status(run_id, "failed")
@@ -202,6 +207,7 @@ async def event_stream(
 # ═══════════════════════════════════════════
 # 健康检查 & 信息
 # ═══════════════════════════════════════════
+
 
 @app.get("/health")
 async def health_check():
@@ -241,6 +247,7 @@ async def api_info():
 # ═══════════════════════════════════════════
 # Run CRUD
 # ═══════════════════════════════════════════
+
 
 @app.on_event("startup")
 async def startup():
@@ -299,7 +306,9 @@ async def get_run_endpoint(run_id: str):
 async def list_runs_endpoint(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    status: str | None = Query(None, pattern="^(queued|running|waiting_human|completed|failed|cancelled)$"),
+    status: str | None = Query(
+        None, pattern="^(queued|running|waiting_human|completed|failed|cancelled)$"
+    ),
 ):
     """列出任务, 支持分页和状态筛选"""
     all_runs = list_runs(limit=limit + offset, offset=0)
@@ -311,28 +320,36 @@ async def list_runs_endpoint(
         filtered = all_runs
 
     # 分页
-    page = filtered[offset:offset + limit]
+    page = filtered[offset : offset + limit]
     total = len(filtered)
     has_more = (offset + limit) < total
 
     items = [
         RunInfoResponse(
-            run_id=r.id, topic=r.topic, status=r.status,
-            current_node=r.current_node, iteration=r.iteration,
+            run_id=r.id,
+            topic=r.topic,
+            status=r.status,
+            current_node=r.current_node,
+            iteration=r.iteration,
             require_human_approval=r.require_human_approval,
-            total_cost_usd=r.total_cost_usd, error_count=r.error_count,
+            total_cost_usd=r.total_cost_usd,
+            error_count=r.error_count,
             created_at=r.created_at.isoformat(),
             updated_at=r.updated_at.isoformat(),
             completed_at=r.completed_at.isoformat() if r.completed_at else None,
         )
         for r in page
     ]
-    return RunListResponse(items=items, pagination=PaginationMeta(total=total, limit=limit, offset=offset, has_more=has_more))
+    return RunListResponse(
+        items=items,
+        pagination=PaginationMeta(total=total, limit=limit, offset=offset, has_more=has_more),
+    )
 
 
 # ═══════════════════════════════════════════
 # SSE 实时事件
 # ═══════════════════════════════════════════
+
 
 @app.get("/api/v1/runs/{run_id}/events")
 async def stream_run_events(run_id: str, request: Request):
@@ -346,8 +363,9 @@ async def stream_run_events(run_id: str, request: Request):
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
     if run.status in ("completed", "failed", "cancelled"):
+        payload = {"type": "done", "run_id": run_id, "status": run.status}
         return PlainTextResponse(
-            content=f"data: {json.dumps({'type': 'done', 'run_id': run_id, 'status': run.status})}\n\ndata: [DONE]\n\n",
+            content=f"data: {json.dumps(payload)}\n\ndata: [DONE]\n\n",
             media_type="text/event-stream",
         )
 
@@ -381,6 +399,7 @@ async def stream_run_events(run_id: str, request: Request):
 # 人工审批
 # ═══════════════════════════════════════════
 
+
 @app.post("/api/v1/runs/{run_id}/review")
 async def review_run(run_id: str, req: ReviewRequest):
     """人工审批任务
@@ -407,6 +426,7 @@ async def review_run(run_id: str, req: ReviewRequest):
 
     try:
         from langgraph.types import Command
+
         graph.invoke(
             Command(resume={"action": req.action, "feedback": req.feedback}),
             config=config,
@@ -417,12 +437,18 @@ async def review_run(run_id: str, req: ReviewRequest):
     new_status = "cancelled" if req.action == "cancel" else "running"
     update_run_status(run_id, new_status)
 
-    return {"run_id": run_id, "action": req.action, "new_status": new_status, "feedback": req.feedback}
+    return {
+        "run_id": run_id,
+        "action": req.action,
+        "new_status": new_status,
+        "feedback": req.feedback,
+    }
 
 
 # ═══════════════════════════════════════════
 # 来源查询
 # ═══════════════════════════════════════════
+
 
 @app.get("/api/v1/runs/{run_id}/sources")
 async def get_run_sources(
@@ -449,8 +475,11 @@ async def get_run_sources(
 
     return [
         SourceResponse(
-            id=s.id, url=s.canonical_url, title=s.title,
-            publisher=s.publisher, source_type=s.source_type,
+            id=s.id,
+            url=s.canonical_url,
+            title=s.title,
+            publisher=s.publisher,
+            source_type=s.source_type,
             credibility_score=s.credibility_score,
             extraction_status=s.extraction_status,
             extraction_error=s.extraction_error,
@@ -472,8 +501,9 @@ async def get_source_detail(run_id: str, source_id: str):
             if s.content_location:
                 try:
                     import os.path
+
                     if os.path.exists(s.content_location):
-                        with open(s.content_location, "r", encoding="utf-8") as f:
+                        with open(s.content_location, encoding="utf-8") as f:
                             content = f.read()[:20000]
                 except Exception:
                     pass
@@ -500,6 +530,7 @@ async def get_source_detail(run_id: str, source_id: str):
 # 报告
 # ═══════════════════════════════════════════
 
+
 @app.get("/api/v1/runs/{run_id}/reports")
 async def get_run_reports(run_id: str):
     """获取报告版本列表"""
@@ -508,8 +539,11 @@ async def get_run_reports(run_id: str):
     versions = get_report_versions(run_id)
     return [
         ReportVersionResponse(
-            id=v.id, version=v.version, created_by=v.created_by_node,
-            created_at=v.created_at.isoformat(), length=len(v.markdown),
+            id=v.id,
+            version=v.version,
+            created_by=v.created_by_node,
+            created_at=v.created_at.isoformat(),
+            length=len(v.markdown),
         )
         for v in versions
     ]
@@ -538,6 +572,7 @@ async def get_report_detail(run_id: str, version_id: str):
 # ═══════════════════════════════════════════
 # 导出
 # ═══════════════════════════════════════════
+
 
 @app.get("/api/v1/runs/{run_id}/export")
 async def export_report(run_id: str, format: str = "markdown"):
@@ -570,8 +605,13 @@ async def export_report(run_id: str, format: str = "markdown"):
                 "total_versions": len(versions),
             },
             "sources": [
-                {"id": s.id, "url": s.canonical_url, "title": s.title,
-                 "type": s.source_type, "credibility": s.credibility_score}
+                {
+                    "id": s.id,
+                    "url": s.canonical_url,
+                    "title": s.title,
+                    "type": s.source_type,
+                    "credibility": s.credibility_score,
+                }
                 for s in sources
             ],
             "exported_at": datetime.now().isoformat(),
@@ -609,6 +649,7 @@ async def export_all_versions(run_id: str):
 # 任务操作
 # ═══════════════════════════════════════════
 
+
 @app.post("/api/v1/runs/{run_id}/cancel")
 async def cancel_run(run_id: str):
     """取消任务"""
@@ -627,4 +668,5 @@ async def cancel_run(run_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    uvicorn.run(app, host=settings.HOST, port=settings.PORT)

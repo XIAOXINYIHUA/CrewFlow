@@ -1,11 +1,10 @@
 """Claim 服务测试 — 提取模型、合并逻辑、结构化输出"""
-import pytest
 
 from src.services.claim_service import (
+    BatchExtractionResult,
     ExtractedClaim,
     ExtractedEvidence,
     SourceExtraction,
-    BatchExtractionResult,
 )
 
 
@@ -60,10 +59,12 @@ class TestExtractionModels:
         assert extraction.extraction_quality == "failed"
 
     def test_batch_result(self):
-        batch = BatchExtractionResult(extractions=[
-            SourceExtraction(source_id="S001", claims=[]),
-            SourceExtraction(source_id="S002", claims=[]),
-        ])
+        batch = BatchExtractionResult(
+            extractions=[
+                SourceExtraction(source_id="S001", claims=[]),
+                SourceExtraction(source_id="S002", claims=[]),
+            ]
+        )
         assert len(batch.extractions) == 2
 
     def test_claim_quality_default(self):
