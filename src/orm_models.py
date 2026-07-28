@@ -3,25 +3,28 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
-from typing import Optional
 
 from sqlalchemy import (
-    Column, String, Text, DateTime, Integer, Float, Boolean,
-    ForeignKey, JSON, Enum as SAEnum,
-    create_engine,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
-
 
 # ═══════════════════════════════════════════
 # 研究运行
 # ═══════════════════════════════════════════
 
+
 class ResearchRunORM(Base):
     """research_runs 表"""
+
     __tablename__ = "research_runs"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
@@ -32,13 +35,15 @@ class ResearchRunORM(Base):
     language: Mapped[str] = mapped_column(String(10), default="zh-CN")
     target_words: Mapped[int] = mapped_column(Integer, default=2500)
     require_human_approval: Mapped[bool] = mapped_column(Boolean, default=True)
-    current_node: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    current_node: Mapped[str | None] = mapped_column(String(50), nullable=True)
     iteration: Mapped[int] = mapped_column(Integer, default=0)
     total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
     error_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.now, onupdate=datetime.now
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     def to_dict(self) -> dict:
         return {
@@ -63,33 +68,37 @@ class ResearchRunORM(Base):
 # 来源
 # ═══════════════════════════════════════════
 
+
 class SourceORM(Base):
     """sources 表"""
+
     __tablename__ = "sources"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     run_id: Mapped[str] = mapped_column(String(32), ForeignKey("research_runs.id"), index=True)
     canonical_url: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[str] = mapped_column(Text, default="")
-    publisher: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
-    author: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
-    published_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    publisher: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    author: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     retrieved_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
     source_type: Mapped[str] = mapped_column(String(20), default="unknown")
     content_hash: Mapped[str] = mapped_column(String(32), default="")
     content_location: Mapped[str] = mapped_column(Text, default="")
     extraction_status: Mapped[str] = mapped_column(String(10), default="pending")
-    extraction_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    extraction_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     credibility_score: Mapped[float] = mapped_column(Float, default=0.5)
-    credibility_reasons: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON list
+    credibility_reasons: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
 
 
 # ═══════════════════════════════════════════
 # 结论 (Claim)
 # ═══════════════════════════════════════════
 
+
 class ClaimORM(Base):
     """claims 表"""
+
     __tablename__ = "claims"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
@@ -102,6 +111,7 @@ class ClaimORM(Base):
 
 class EvidenceORM(Base):
     """claim_evidence 表"""
+
     __tablename__ = "claim_evidence"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
@@ -109,15 +119,17 @@ class EvidenceORM(Base):
     source_id: Mapped[str] = mapped_column(String(32), ForeignKey("sources.id"))
     quote: Mapped[str] = mapped_column(Text, nullable=False)
     supports_claim: Mapped[bool] = mapped_column(Boolean, default=True)
-    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 # ═══════════════════════════════════════════
 # 报告版本
 # ═══════════════════════════════════════════
 
+
 class ReportVersionORM(Base):
     """report_versions 表"""
+
     __tablename__ = "report_versions"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
@@ -126,15 +138,17 @@ class ReportVersionORM(Base):
     markdown: Mapped[str] = mapped_column(Text, nullable=False)
     created_by_node: Mapped[str] = mapped_column(String(50), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
-    citation_ids: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON list
+    citation_ids: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
 
 
 # ═══════════════════════════════════════════
 # 审查记录
 # ═══════════════════════════════════════════
 
+
 class ReviewORM(Base):
     """reviews 表"""
+
     __tablename__ = "reviews"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
@@ -145,19 +159,20 @@ class ReviewORM(Base):
     citation_score: Mapped[int] = mapped_column(Integer, default=0)
     coverage_score: Mapped[int] = mapped_column(Integer, default=0)
     structure_score: Mapped[int] = mapped_column(Integer, default=0)
-    issues_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON
-    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    issues_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
 class HumanDecisionORM(Base):
     """human_decisions 表"""
+
     __tablename__ = "human_decisions"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     run_id: Mapped[str] = mapped_column(String(32), ForeignKey("research_runs.id"), index=True)
     action: Mapped[str] = mapped_column(String(10), nullable=False)
-    feedback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
     decided_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
 
@@ -165,8 +180,10 @@ class HumanDecisionORM(Base):
 # 节点执行记录
 # ═══════════════════════════════════════════
 
+
 class NodeExecutionORM(Base):
     """node_executions 表"""
+
     __tablename__ = "node_executions"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
@@ -177,7 +194,7 @@ class NodeExecutionORM(Base):
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
-    error_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
-    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

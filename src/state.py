@@ -2,27 +2,26 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Optional
 from datetime import datetime
 from decimal import Decimal
+from typing import Annotated
 
 from langgraph.graph.message import add_messages
 from langgraph.managed import IsLastStep
-from langgraph.graph import StateGraph, MessagesState
 from typing_extensions import TypedDict
 
 from .models import (
-    ResearchRequirements,
-    ResearchPlan,
-    SearchResult,
-    Source,
     Claim,
-    ReviewResult,
-    ReportVersion,
     HumanDecision,
     NodeExecutionRecord,
-    RunStatus,
     QualityStatus,
+    ReportVersion,
+    ResearchPlan,
+    ResearchRequirements,
+    ReviewResult,
+    RunStatus,
+    SearchResult,
+    Source,
 )
 
 
@@ -57,8 +56,8 @@ class CrewState(TypedDict):
     topic: str
 
     # ── 研究计划 ──
-    research_plan: Optional[ResearchPlan]
-    outline: Optional[dict]          # ReportOutline 的事例化
+    research_plan: ResearchPlan | None
+    outline: dict | None  # ReportOutline 的事例化
     coverage_gaps: Annotated[list[str], reduce_list]
 
     # ── 搜索结果和来源 ──
@@ -69,23 +68,23 @@ class CrewState(TypedDict):
     claims: Annotated[list[Claim], reduce_list]
 
     # ── 报告版本 ──
-    analysis: Optional[str]          # Analyst 的分析
-    draft_id: Optional[str]           # 当前草稿版本 ID
-    draft: Optional[str]              # 当前草稿 Markdown
+    analysis: str | None  # Analyst 的分析
+    draft_id: str | None  # 当前草稿版本 ID
+    draft: str | None  # 当前草稿 Markdown
     report_versions: Annotated[list[ReportVersion], reduce_list]
-    final_report_id: Optional[str]
-    final_report: Optional[str]
+    final_report_id: str | None
+    final_report: str | None
 
     # ── 审查 ──
-    review: Optional[ReviewResult]
+    review: ReviewResult | None
     iteration: int
 
     # ── 人工审批 ──
-    human_decision: Optional[HumanDecision]
+    human_decision: HumanDecision | None
     require_human_approval: bool
 
     # ── 执行追踪 ──
-    current_node: Optional[str]
+    current_node: str | None
     node_executions: Annotated[list[NodeExecutionRecord], reduce_list]
     total_cost_usd: Decimal
     errors: Annotated[list[str], reduce_list]
@@ -96,6 +95,7 @@ class CrewState(TypedDict):
 
 
 # ── 初始状态工厂 ──
+
 
 def create_initial_state(
     topic: str,

@@ -5,8 +5,7 @@ from __future__ import annotations
 import re
 from typing import NamedTuple
 
-from src.models import Source, Claim
-
+from src.models import Claim, Source
 
 # ═══════════════════════════════════════════
 # 引用提取
@@ -25,6 +24,7 @@ def extract_citation_ids(text: str) -> list[str]:
 # 检测结果
 # ═══════════════════════════════════════════
 
+
 class CitationCheckResult(NamedTuple):
     source_id: str
     exists: bool
@@ -34,6 +34,7 @@ class CitationCheckResult(NamedTuple):
 
 class CitationCoverageReport:
     """引用覆盖检查报告"""
+
     def __init__(self):
         self.valid_citations: list[CitationCheckResult] = []
         self.invalid_citations: list[CitationCheckResult] = []
@@ -69,6 +70,7 @@ class CitationCoverageReport:
 # 引用有效性检查
 # ═══════════════════════════════════════════
 
+
 def check_citations(
     report: str,
     sources: list[Source],
@@ -98,9 +100,8 @@ def check_citations(
         if cid in source_map:
             src = source_map[cid]
             is_valid = src.extraction_status == "success" or src.extraction_status == "pending"
-            note = (
-                f"来源: {src.title or src.canonical_url[:50]}"
-                + ("" if is_valid else " (内容未成功抓取)")
+            note = f"来源: {src.title or src.canonical_url[:50]}" + (
+                "" if is_valid else " (内容未成功抓取)"
             )
             result = CitationCheckResult(cid, True, is_valid, note)
             report_result.valid_citations.append(result)
@@ -172,11 +173,13 @@ def find_uncited_assertions(report: str) -> list[dict]:
                 matched_patterns.append(pattern.pattern)
 
         if matched_patterns:
-            results.append({
-                "line": line_no,
-                "text": stripped[:100],
-                "patterns": matched_patterns,
-            })
+            results.append(
+                {
+                    "line": line_no,
+                    "text": stripped[:100],
+                    "patterns": matched_patterns,
+                }
+            )
 
     return results
 
@@ -184,6 +187,7 @@ def find_uncited_assertions(report: str) -> list[dict]:
 # ═══════════════════════════════════════════
 # 来源冲突检测
 # ═══════════════════════════════════════════
+
 
 def detect_conflicting_claims(claims: list[Claim]) -> list[dict]:
     """检测相互冲突的 Claim
@@ -211,13 +215,15 @@ def detect_conflicting_claims(claims: list[Claim]) -> list[dict]:
                     and other.question_id == claim.question_id
                     and other.status != claim.status
                 ):
-                    conflicts.append({
-                        "claim_a": claim.id,
-                        "claim_b": other.id,
-                        "text_a": claim.text[:80],
-                        "text_b": other.text[:80],
-                        "question_id": claim.question_id,
-                        "note": "相同子问题的结论状态不一致",
-                    })
+                    conflicts.append(
+                        {
+                            "claim_a": claim.id,
+                            "claim_b": other.id,
+                            "text_a": claim.text[:80],
+                            "text_b": other.text[:80],
+                            "question_id": claim.question_id,
+                            "note": "相同子问题的结论状态不一致",
+                        }
+                    )
 
     return conflicts

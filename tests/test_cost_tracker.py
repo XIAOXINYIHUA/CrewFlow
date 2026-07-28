@@ -1,9 +1,8 @@
 """Token/成本跟踪测试"""
 
 from decimal import Decimal
-import pytest
 
-from src.services.cost_tracker import TokenUsage, CostBudget, estimate_run_cost
+from src.services.cost_tracker import CostBudget, TokenUsage, estimate_run_cost
 
 
 class TestTokenUsage:

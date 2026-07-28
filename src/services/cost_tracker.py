@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from decimal import Decimal
-from typing import Any
-
 
 # ── 模型定价 (每 1K token, USD) ──
 # 来源: OpenAI 2025-06 定价
@@ -27,6 +24,7 @@ DEFAULT_PRICE = {"input": 0.001, "output": 0.002}  # 未知模型的保守估算
 @dataclass
 class TokenUsage:
     """单次 LLM 调用的 token 用量"""
+
     model: str
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -57,6 +55,7 @@ class TokenUsage:
 @dataclass
 class CostBudget:
     """运行预算跟踪"""
+
     max_cost_usd: Decimal | None = None
     _spent: Decimal = Decimal("0")
     _calls: list[TokenUsage] = field(default_factory=list)

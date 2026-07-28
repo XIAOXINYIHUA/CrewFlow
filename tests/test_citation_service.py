@@ -1,14 +1,12 @@
 """引用检查服务测试 — 引用提取、有效性验证、无来源断言检测、冲突检测"""
 
-import pytest
-
-from src.models import Source, Claim, Evidence
+from src.models import Claim, Evidence, Source
 from src.services.citation_service import (
-    extract_citation_ids,
-    check_citations,
-    find_uncited_assertions,
-    detect_conflicting_claims,
     CitationCoverageReport,
+    check_citations,
+    detect_conflicting_claims,
+    extract_citation_ids,
+    find_uncited_assertions,
 )
 
 
@@ -87,11 +85,13 @@ class TestCheckCitations:
 
     def test_source_failed_extraction(self):
         """引用指向抓取失败的来源"""
-        sources = [Source(
-            id="S001",
-            canonical_url="https://a.com",
-            extraction_status="failed",
-        )]
+        sources = [
+            Source(
+                id="S001",
+                canonical_url="https://a.com",
+                extraction_status="failed",
+            )
+        ]
         report = "引用 [S001]。"
         result = check_citations(report, sources)
         # S001 存在但抓取失败, 应标为无效
@@ -179,8 +179,13 @@ class TestDetectConflictingClaims:
         """检测到冲突"""
         claims = [
             Claim(id="C001", text="AI 提升效率 30%", status="supported", question_id="q1"),
-            Claim(id="C002", text="AI 只提升效率 5%", status="conflicting", question_id="q1",
-                  evidence=[Evidence(source_id="S001", quote="test")]),
+            Claim(
+                id="C002",
+                text="AI 只提升效率 5%",
+                status="conflicting",
+                question_id="q1",
+                evidence=[Evidence(source_id="S001", quote="test")],
+            ),
         ]
         conflicts = detect_conflicting_claims(claims)
         assert len(conflicts) > 0
@@ -190,8 +195,13 @@ class TestDetectConflictingClaims:
         """不同子问题的不同状态不视为冲突"""
         claims = [
             Claim(id="C001", text="A", status="supported", question_id="q1"),
-            Claim(id="C002", text="B", status="conflicting", question_id="q2",
-                  evidence=[Evidence(source_id="S001", quote="test")]),
+            Claim(
+                id="C002",
+                text="B",
+                status="conflicting",
+                question_id="q2",
+                evidence=[Evidence(source_id="S001", quote="test")],
+            ),
         ]
         assert detect_conflicting_claims(claims) == []
 

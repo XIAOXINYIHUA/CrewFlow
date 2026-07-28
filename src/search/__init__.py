@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol, runtime_checkable
@@ -16,6 +15,7 @@ def _new_id() -> str:
 @dataclass
 class SearchResultItem:
     """单个搜索结果的标准返回格式"""
+
     id: str = field(default_factory=_new_id)
     query: str = ""
     url: str = ""
@@ -70,8 +70,10 @@ class SearchProvider(Protocol):
 # 自定义异常
 # ═══════════════════════════════════════════
 
+
 class SearchError(Exception):
     """搜索错误基类"""
+
     def __init__(self, message: str, provider: str = "unknown", query: str = ""):
         self.provider = provider
         self.query = query
@@ -80,32 +82,38 @@ class SearchError(Exception):
 
 class SearchTimeoutError(SearchError):
     """搜索超时"""
+
     pass
 
 
 class SearchRateLimitError(SearchError):
     """API 限流"""
+
     pass
 
 
 class SearchAuthError(SearchError):
     """API 认证失败"""
+
     pass
 
 
 class SearchNoResultsError(SearchError):
     """搜索无结果"""
+
     pass
 
 
 class SearchProviderError(SearchError):
     """提供商其他错误"""
+
     pass
 
 
 # ═══════════════════════════════════════════
 # 分类函数
 # ═══════════════════════════════════════════
+
 
 def classify_search_error(e: Exception, query: str = "") -> SearchError:
     """将原始异常分类为 SearchError

@@ -1,15 +1,17 @@
 name: crewflow
 
+x-app-environment: &app-environment
+  CREWFLOW_DATABASE_URL: postgresql+psycopg://crewflow:crewflow@db:5432/crewflow
+  CREWFLOW_OUTPUT_DIR: /app/output
+  CREWFLOW_ARTIFACTS_DIR: /app/data/artifacts
+
 services:
   api:
     build: .
     ports:
       - "8000:8000"
     env_file: .env
-    environment:
-      - CREWFLOW_DATABASE_URL=postgresql+psycopg2://crewflow:crewflow@db:5432/crewflow
-      - CREWFLOW_OUTPUT_DIR=/app/output
-      - CREWFLOW_ARTIFACTS_DIR=/app/data/artifacts
+    environment: *app-environment
     volumes:
       - crewflow_output:/app/output
       - crewflow_artifacts:/app/data/artifacts
@@ -41,8 +43,15 @@ services:
     ports:
       - "7860:7860"
     env_file: .env
+    environment: *app-environment
+    volumes:
+      - crewflow_output:/app/output
+      - crewflow_artifacts:/app/data/artifacts
     depends_on:
-      - api
+      api:
+        condition: service_started
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

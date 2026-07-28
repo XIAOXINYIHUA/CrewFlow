@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -17,7 +17,7 @@ class StructuredFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         log_entry: dict[str, Any] = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -77,18 +77,34 @@ class NodeLogger:
         self.node_name = node_name
 
     def start(self) -> None:
-        self.logger.info("节点开始", extra={
-            "run_id": self.run_id, "node": self.node_name, "event": "start",
-        })
+        self.logger.info(
+            "节点开始",
+            extra={
+                "run_id": self.run_id,
+                "node": self.node_name,
+                "event": "start",
+            },
+        )
 
     def complete(self, **meta) -> None:
-        self.logger.info("节点完成", extra={
-            "run_id": self.run_id, "node": self.node_name,
-            "event": "complete", **meta,
-        })
+        self.logger.info(
+            "节点完成",
+            extra={
+                "run_id": self.run_id,
+                "node": self.node_name,
+                "event": "complete",
+                **meta,
+            },
+        )
 
     def error(self, error_type: str, message: str, **meta) -> None:
-        self.logger.error(message, extra={
-            "run_id": self.run_id, "node": self.node_name,
-            "event": "error", "error_type": error_type, **meta,
-        })
+        self.logger.error(
+            message,
+            extra={
+                "run_id": self.run_id,
+                "node": self.node_name,
+                "event": "error",
+                "error_type": error_type,
+                **meta,
+            },
+        )

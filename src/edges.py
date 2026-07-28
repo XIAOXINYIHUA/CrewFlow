@@ -8,9 +8,9 @@
 
 from __future__ import annotations
 
-from src.state import CrewState
-from src.models import ReviewResult
 from src.config import settings
+from src.models import ReviewResult
+from src.state import CrewState
 
 
 def should_revise_or_end(state: CrewState) -> str:
@@ -31,10 +31,14 @@ def should_revise_or_end(state: CrewState) -> str:
         return "human_review"
 
     # 检查是否有 critical 事实问题
-    has_critical_fact = any(
-        i.severity == "critical" and i.category in ("factuality", "citation")
-        for i in review.issues
-    ) if review.issues else False
+    has_critical_fact = (
+        any(
+            i.severity == "critical" and i.category in ("factuality", "citation")
+            for i in review.issues
+        )
+        if review.issues
+        else False
+    )
 
     # 已达最大迭代次数
     maxed_out = iteration >= settings.MAX_ITERATIONS

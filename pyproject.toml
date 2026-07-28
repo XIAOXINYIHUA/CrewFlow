@@ -1,11 +1,11 @@
 [build-system]
 requires = ["setuptools>=69.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "crewflow"
 version = "0.2.0"
-description = "Multi-Agent collabration research system built with LangGraph"
+description = "Multi-agent collaborative research system built with LangGraph"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -35,7 +35,7 @@ server = [
     "fastapi>=0.115.0",
     "uvicorn>=0.34.0",
     "sse-starlette>=2.0.0",
-    "asyncpg>=0.30.0",
+    "psycopg[binary]>=3.2.0",
 ]
 web = [
     "gradio>=5.0.0",
@@ -47,13 +47,13 @@ include = ["src*"]
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+indent-width = 4
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "RUF100"]
 
 [tool.ruff.format]
 quote-style = "double"
-indent-width = 4
 
 [tool.mypy]
 python_version = "3.11"

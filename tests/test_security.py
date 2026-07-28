@@ -1,14 +1,11 @@
 """安全测试 — SSRF、HTML 注入、Prompt Injection、文件名安全"""
 
-import pytest
-
 from src.services.security import (
-    sanitize_html,
-    safe_filename,
     detect_injection,
     isolate_web_content,
+    safe_filename,
+    sanitize_html,
 )
-from src.services.source_service import is_safe_url, normalize_url
 
 
 class TestHTMLSanitization:

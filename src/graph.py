@@ -14,34 +14,35 @@ from __future__ import annotations
 import asyncio
 from functools import wraps
 
-from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph
 
-from src.state import CrewState
+from src.edges import after_human_review, should_revise_or_end
 from src.nodes import (
-    validate_input_node,
-    researcher_node,
-    source_processor_node,
-    claim_builder_node,
     analyst_node,
-    writer_node,
     citation_checker_node,
-    reviewer_node,
-    publisher_node,
+    claim_builder_node,
     human_review_node,
+    publisher_node,
+    researcher_node,
+    reviewer_node,
+    source_processor_node,
+    validate_input_node,
+    writer_node,
 )
 from src.nodes_extra import (
-    planner_node,
-    outline_builder_node,
     coverage_checker_node,
+    outline_builder_node,
+    planner_node,
 )
-from src.edges import should_revise_or_end, after_human_review
+from src.state import CrewState
 
 
 def _sync(f):
     @wraps(f)
     def wrapper(state: CrewState):
         return asyncio.run(f(state))
+
     return wrapper
 
 

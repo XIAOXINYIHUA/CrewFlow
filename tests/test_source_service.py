@@ -2,14 +2,14 @@
 
 import pytest
 
-from src.models import Source, SearchResult
+from src.models import SearchResult, Source
 from src.services.source_service import (
-    normalize_url,
-    is_safe_url,
     content_hash,
     deduplicate_sources,
-    url_to_source_type,
     evaluate_credibility,
+    is_safe_url,
+    normalize_url,
+    url_to_source_type,
 )
 
 

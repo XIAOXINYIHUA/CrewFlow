@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import re
-import html as html_mod
-
 
 # ═══════════════════════════════════════════
 # HTML 清洗
@@ -12,15 +10,28 @@ import html as html_mod
 
 # 危险的 HTML 标签
 DANGEROUS_TAGS = {
-    "script", "iframe", "object", "embed", "applet",
-    "style", "link", "meta", "base", "form", "input",
-    "button", "textarea", "select", "option",
-    "marquee", "frame", "frameset",
+    "script",
+    "iframe",
+    "object",
+    "embed",
+    "applet",
+    "style",
+    "link",
+    "meta",
+    "base",
+    "form",
+    "input",
+    "button",
+    "textarea",
+    "select",
+    "option",
+    "marquee",
+    "frame",
+    "frameset",
 }
 
 # 危险的事件属性前缀
-EVENT_ATTR_PREFIXES = ("on", "onload", "onerror", "onclick",
-                       "onmouseover", "onfocus", "onblur")
+EVENT_ATTR_PREFIXES = ("on", "onload", "onerror", "onclick", "onmouseover", "onfocus", "onblur")
 
 
 def sanitize_html(html: str) -> str:
@@ -90,7 +101,7 @@ def sanitize_markdown_html(markdown: str) -> str:
 
     # 匹配可能包含 HTML 的代码块
     cleaned = re.sub(
-        r'(?<!\x60\x60\x60)',
+        r"(?<!\x60\x60\x60)",
         _replace_html_block,
         markdown,
     )
@@ -119,7 +130,7 @@ def safe_filename(text: str, max_length: int = 64) -> str:
     # 替换危险字符
     safe = UNSAFE_FILENAME_CHARS.sub("_", text)
     # 替换空白
-    safe = re.sub(r'\s+', "_", safe)
+    safe = re.sub(r"\s+", "_", safe)
     # 移除开头结尾的点和空格
     safe = safe.strip("._ ")
     # 限制长度
@@ -159,11 +170,13 @@ def detect_injection(content: str) -> list[dict]:
     findings: list[dict] = []
     for pattern in INJECTION_PATTERNS:
         for match in pattern.finditer(content):
-            findings.append({
-                "position": match.start(),
-                "matched": match.group()[:80],
-                "pattern": pattern.pattern[:60],
-            })
+            findings.append(
+                {
+                    "position": match.start(),
+                    "matched": match.group()[:80],
+                    "pattern": pattern.pattern[:60],
+                }
+            )
     return findings
 
 
