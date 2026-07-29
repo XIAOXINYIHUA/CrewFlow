@@ -240,13 +240,15 @@ def fetch_webpage(url: str, timeout: int = 15) -> WebpageFetchResult:
             html = content.decode("utf-8", errors="replace")
 
             # 使用 trafilatura 提取正文
-            text = trafilatura.extract(
-                html,
-                output_format="txt",
-                include_comments=False,
-                include_tables=True,
-                no_fail=True,
-            )
+            try:
+                text = trafilatura.extract(
+                    html,
+                    output_format="txt",
+                    include_comments=False,
+                    include_tables=True,
+                )
+            except Exception:
+                text = ""
 
             # 提取标题
             title = ""
